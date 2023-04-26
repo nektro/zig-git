@@ -64,3 +64,66 @@ pub const Commit = struct {
     gpgsig: string,
     message: string,
 };
+
+pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
+    var iter = std.mem.split(u8, treefile, "\n");
+    var children = std.ArrayList(Tree.Object).init(alloc);
+    errdefer children.deinit();
+
+    while (iter.next()) |line| {
+        var jter = std.mem.split(u8, line, " ");
+        const mode = try std.fmt.parseInt(u32, jter.next().?, 10);
+        const otype = std.meta.stringToEnum(Tree.Object.Id.Tag, jter.next().?).?;
+        const id_and_name = jter.next().?;
+        std.debug.assert(jter.next() == null);
+        const tab_pos = std.mem.indexOfScalar(u8, id_and_name, '\t').?; // why git. why.
+        std.debug.assert(tab_pos == 40);
+        const id = id_and_name[0..tab_pos][0..40];
+        const name = id_and_name[tab_pos + 1 ..];
+
+        inline for (std.meta.fields(Tree.Object.Id)) |item| {
+            if (std.mem.eql(u8, item.name, @tagName(otype))) {
+                try children.append(.{
+                    .mode = mode,
+                    .id = @unionInit(Tree.Object.Id, item.name, item.type{ .id = id }),
+                    .name = name,
+                });
+            }
+        }
+    }
+    return Tree{
+        .children = try children.toOwnedSlice(),
+    };
+}
+
+pub const Tree = struct {
+    children: []const Object,
+
+    pub fn get(self: Tree, name: string) ?Object {
+        for (self.children) |item| {
+            if (std.mem.eql(u8, item.name, name)) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    pub fn getBlob(self: Tree, name: string) ?Object {
+        const o = self.get(name) orelse return null;
+        if (o.id != .blob) return null;
+        return o;
+    }
+
+    pub const Object = struct {
+        mode: u32, // git allegedly only uses a specific set of these. should it be an enum?
+        id: @This().Id,
+        name: string,
+
+        pub const Id = union(enum) {
+            blob: BlobId,
+            tree: TreeId,
+
+            pub const Tag = std.meta.Tag(@This());
+        };
+    };
+};
