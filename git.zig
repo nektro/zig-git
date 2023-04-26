@@ -29,7 +29,7 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
         .cwd_dir = dir,
         .argv = &.{ "git", "cat-file", "-p", obj },
     });
-    return result.stdout;
+    return std.mem.trimRight(u8, result.stdout, "\n");
 }
 
 pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
