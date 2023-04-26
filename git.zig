@@ -3,6 +3,9 @@ const string = []const u8;
 
 // 40 is length of sha1 hash
 pub const Id = *const [40]u8;
+pub const TreeId = struct { id: Id };
+pub const CommitId = struct { id: Id };
+pub const BlobId = struct { id: Id };
 
 /// Returns the result of running `git rev-parse HEAD`
 /// dir must already be pointing at the .git folder
@@ -35,7 +38,7 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
 pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
     var iter = std.mem.split(u8, commitfile, "\n");
     var result: Commit = undefined;
-    var parents = std.ArrayList(Id).init(alloc);
+    var parents = std.ArrayList(CommitId).init(alloc);
     errdefer parents.deinit();
     while (true) {
         const line = iter.next().?;
@@ -43,10 +46,10 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
         const space = std.mem.indexOfScalar(u8, line, ' ').?;
         const k = line[0..space];
 
-        if (std.mem.eql(u8, k, "tree")) result.tree = line[space + 1 ..][0..40];
+        if (std.mem.eql(u8, k, "tree")) result.tree = .{ .id = line[space + 1 ..][0..40] };
         if (std.mem.eql(u8, k, "author")) result.author = line[space + 1 ..];
         if (std.mem.eql(u8, k, "committer")) result.committer = line[space + 1 ..];
-        if (std.mem.eql(u8, k, "parent")) try parents.append(line[space + 1 ..][0..40]);
+        if (std.mem.eql(u8, k, "parent")) try parents.append(.{ .id = line[space + 1 ..][0..40] });
     }
     result.parents = try parents.toOwnedSlice();
     result.message = iter.rest();
@@ -54,8 +57,8 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
 }
 
 pub const Commit = struct {
-    tree: Id,
-    parents: []const Id,
+    tree: TreeId,
+    parents: []const CommitId,
     author: string,
     committer: string,
     gpgsig: string,
