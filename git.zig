@@ -139,6 +139,7 @@ pub const Tree = struct {
         pub const Id = union(enum) {
             blob: BlobId,
             tree: TreeId,
+            commit: CommitId,
 
             pub const Tag = std.meta.Tag(@This());
         };
