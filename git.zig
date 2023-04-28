@@ -89,7 +89,7 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
 
     while (iter.next()) |line| {
         var jter = std.mem.split(u8, line, " ");
-        const mode = try std.fmt.parseInt(u32, jter.next().?, 10);
+        const mode = jter.next().?;
         const otype = std.meta.stringToEnum(Tree.Object.Id.Tag, jter.next().?).?;
         const id_and_name = jter.next().?;
         std.debug.assert(jter.next() == null);
@@ -101,7 +101,12 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
         inline for (std.meta.fields(Tree.Object.Id)) |item| {
             if (std.mem.eql(u8, item.name, @tagName(otype))) {
                 try children.append(.{
-                    .mode = mode,
+                    .mode = .{
+                        .type = @intToEnum(Tree.Object.Type, try std.fmt.parseInt(u16, mode[0..3], 10)),
+                        .perm_user = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, mode[3..][0..1], 8)),
+                        .perm_group = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, mode[4..][0..1], 8)),
+                        .perm_other = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, mode[5..][0..1], 8)),
+                    },
                     .id = @unionInit(Tree.Object.Id, item.name, item.type{ .id = id }),
                     .name = name,
                 });
@@ -132,7 +137,7 @@ pub const Tree = struct {
     }
 
     pub const Object = struct {
-        mode: u32, // git allegedly only uses a specific set of these. should it be an enum?
+        mode: Mode,
         id: @This().Id,
         name: string,
 
@@ -142,6 +147,57 @@ pub const Tree = struct {
             commit: CommitId,
 
             pub const Tag = std.meta.Tag(@This());
+        };
+
+        pub const Mode = struct {
+            type: Type,
+            perm_user: Perm,
+            perm_group: Perm,
+            perm_other: Perm,
+
+            pub fn format(self: Mode, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
+                _ = fmt;
+                _ = options;
+
+                try writer.print("{}", .{self.type});
+                try writer.print("{}", .{self.perm_user});
+                try writer.print("{}", .{self.perm_group});
+                try writer.print("{}", .{self.perm_other});
+            }
+        };
+
+        pub const Type = enum(u16) {
+            file = 100,
+            directory = 40,
+            submodule = 160,
+            _,
+
+            pub fn format(self: Type, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
+                _ = fmt;
+                _ = options;
+
+                try writer.writeByte(switch (self) {
+                    .file => '-',
+                    .directory => 'd',
+                    .submodule => 'm',
+                    _ => '?',
+                });
+            }
+        };
+
+        pub const Perm = packed struct(u3) {
+            execute: bool,
+            write: bool,
+            read: bool,
+
+            pub fn format(self: Perm, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
+                _ = fmt;
+                _ = options;
+
+                try writer.writeByte(if (self.read) 'r' else '-');
+                try writer.writeByte(if (self.write) 'w' else '-');
+                try writer.writeByte(if (self.execute) 'x' else '-');
+            }
         };
     };
 };
