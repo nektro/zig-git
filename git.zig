@@ -13,7 +13,21 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !Id {
     const h = std.mem.trimRight(u8, try dir.readFileAlloc(alloc, "HEAD", 1024), "\n");
 
     if (std.mem.startsWith(u8, h, "ref:")) {
-        const r = std.mem.trimRight(u8, try dir.readFileAlloc(alloc, h[5..], 1024), "\n");
+        const r = blk: {
+            const pckedrfs = try dir.readFileAlloc(alloc, "packed-refs", 1024 * 1024);
+            var iter = std.mem.split(u8, pckedrfs, "\n");
+            while (iter.next()) |line| {
+                if (std.mem.startsWith(u8, line, "#")) continue;
+                if (std.mem.startsWith(u8, line, "^")) continue;
+                if (line.len == 0) continue;
+                var jter = std.mem.split(u8, line, " ");
+                const objid = jter.next().?;
+                const ref = jter.next().?;
+                std.debug.assert(jter.next() == null);
+                if (std.mem.eql(u8, h[5..], ref)) break :blk objid;
+            }
+            break :blk std.mem.trimRight(u8, try dir.readFileAlloc(alloc, h[5..], 1024), "\n");
+        };
         std.debug.assert(r.len == 40);
         return r[0..40];
     }
