@@ -14,7 +14,10 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !Id {
 
     if (std.mem.startsWith(u8, h, "ref:")) {
         const r = blk: {
-            const pckedrfs = try dir.readFileAlloc(alloc, "packed-refs", 1024 * 1024);
+            const pckedrfs = dir.readFileAlloc(alloc, "packed-refs", 1024 * 1024) catch |err| switch (err) {
+                error.FileNotFound => try std.fs.cwd().readFileAlloc(alloc, "/dev/null", 1024),
+                else => |e| return e,
+            };
             var iter = std.mem.split(u8, pckedrfs, "\n");
             while (iter.next()) |line| {
                 if (std.mem.startsWith(u8, line, "#")) continue;
