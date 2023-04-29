@@ -65,6 +65,26 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
     return try std.fmt.parseInt(u64, std.mem.trimRight(u8, result.stdout, "\n"), 10);
 }
 
+// TODO make this inspect .git/objects manually
+// TODO make a version of this that accepts an array of sub_paths and searches all of them at once, so as to not lose spot in history when searching for many old paths
+// https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
+// https://git-scm.com/book/en/v2/Git-Internals-Packfiles
+pub fn revList(alloc: std.mem.Allocator, dir: std.fs.Dir, comptime count: u31, from: CommitId, sub_path: string) !string {
+    const result = try std.ChildProcess.exec(.{
+        .allocator = alloc,
+        .cwd_dir = dir,
+        .argv = &.{
+            "git",
+            "rev-list",
+            "-" ++ std.fmt.comptimePrint("{d}", .{count}),
+            from.id,
+            "--",
+            sub_path,
+        },
+    });
+    return std.mem.trimRight(u8, result.stdout, "\n");
+}
+
 pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
     var iter = std.mem.split(u8, commitfile, "\n");
     var result: Commit = undefined;
