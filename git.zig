@@ -53,6 +53,18 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
     return std.mem.trimRight(u8, result.stdout, "\n");
 }
 
+// TODO make this inspect .git/objects manually
+// https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
+// https://git-scm.com/book/en/v2/Git-Internals-Packfiles
+pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
+    const result = try std.ChildProcess.exec(.{
+        .allocator = alloc,
+        .cwd_dir = dir,
+        .argv = &.{ "git", "cat-file", "-s", obj },
+    });
+    return try std.fmt.parseInt(u64, std.mem.trimRight(u8, result.stdout, "\n"), 10);
+}
+
 pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
     var iter = std.mem.split(u8, commitfile, "\n");
     var result: Commit = undefined;
