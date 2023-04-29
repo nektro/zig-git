@@ -170,7 +170,7 @@ pub const Tree = struct {
             file = 100,
             directory = 40,
             submodule = 160,
-            _,
+            symlink = 120,
 
             pub fn format(self: Type, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
                 _ = fmt;
@@ -180,7 +180,7 @@ pub const Tree = struct {
                     .file => '-',
                     .directory => 'd',
                     .submodule => 'm',
-                    _ => '?',
+                    .symlink => '-',
                 });
             }
         };
