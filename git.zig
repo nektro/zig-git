@@ -1,5 +1,6 @@
 const std = @import("std");
 const string = []const u8;
+const top = @This();
 
 // 40 is length of sha1 hash
 pub const Id = *const [40]u8;
@@ -147,6 +148,12 @@ pub const Tree = struct {
             commit: CommitId,
 
             pub const Tag = std.meta.Tag(@This());
+
+            pub fn erase(self: @This()) top.Id {
+                return switch (self) {
+                    inline else => |v| v.id,
+                };
+            }
         };
 
         pub const Mode = struct {
