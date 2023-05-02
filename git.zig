@@ -10,6 +10,7 @@ pub const BlobId = struct { id: Id };
 
 /// Returns the result of running `git rev-parse HEAD`
 /// dir must already be pointing at the .git folder
+// TODO this doesnt handle when there are 0 commits
 pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !Id {
     const h = std.mem.trimRight(u8, try dir.readFileAlloc(alloc, "HEAD", 1024), "\n");
 
