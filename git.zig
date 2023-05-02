@@ -15,7 +15,7 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !Id {
 
     if (std.mem.startsWith(u8, h, "ref:")) {
         const r = blk: {
-            const pckedrfs = dir.readFileAlloc(alloc, "packed-refs", 1024 * 1024) catch |err| switch (err) {
+            const pckedrfs = dir.readFileAlloc(alloc, "packed-refs", 1024 * 1024 * 1024) catch |err| switch (err) {
                 error.FileNotFound => try std.fs.cwd().readFileAlloc(alloc, "/dev/null", 1024),
                 else => |e| return e,
             };
@@ -49,6 +49,7 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
         .allocator = alloc,
         .cwd_dir = dir,
         .argv = &.{ "git", "cat-file", "-p", obj },
+        .max_output_bytes = 1024 * 1024 * 1024,
     });
     return std.mem.trimRight(u8, result.stdout, "\n");
 }
