@@ -44,6 +44,7 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !CommitId {
 }
 
 // TODO make this inspect .git/objects
+// TODO make this return a Reader when we implement it ourselves
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
@@ -57,6 +58,7 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
 }
 
 // TODO make this inspect .git/objects manually
+// TODO make this return a Reader when we implement it ourselves
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
@@ -69,6 +71,7 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
 }
 
 // TODO make this inspect .git/objects manually
+// TODO make this return a Reader when we implement it ourselves
 // TODO make a version of this that accepts an array of sub_paths and searches all of them at once, so as to not lose spot in history when searching for many old paths
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
