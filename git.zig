@@ -277,3 +277,67 @@ pub const Tree = struct {
         };
     };
 };
+
+// TODO make this inspect .git manually
+// TODO make this return a Reader when we implement it ourselves
+pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId, parentid: CommitId) !string {
+    const result = try std.ChildProcess.exec(.{
+        .allocator = alloc,
+        .cwd_dir = dir,
+        .argv = &.{ "git", "diff-tree", "-p", "--raw", commitid.id, parentid.id },
+        .max_output_bytes = 1024 * 1024 * 1024,
+    });
+    return std.mem.trim(u8, result.stdout, "\n");
+}
+
+pub fn parseTreeDiffMeta(input: string) !TreeDiffMeta {
+    var result = std.mem.zeroes(TreeDiffMeta);
+    var lineiter = std.mem.split(u8, input, "\n");
+
+    while (lineiter.next()) |lin| {
+        if (lin.len == 0) break;
+        std.debug.assert(lin[0] == ':');
+        result.files_changed += 1;
+    }
+
+    while (lineiter.next()) |lin| {
+        std.debug.assert(lin.len > 0);
+        switch (lin[0]) {
+            // zig fmt: off
+            'd' => continue, // diff --git a/src/Sema.zig b/src/Sema.zig
+                             // deleted file mode 100644
+            'n' => continue, // new file mode 100644
+            'B' => continue, // Binary files a/stage1/zig1.wasm and b/stage1/zig1.wasm differ
+            'i' => continue, // index 327ff3800..df199be97 100644
+            '@' => continue, // @@ -24629,10 +24634,11 @@
+            ' ' => continue,
+            '+' => result.lines_added += 1,
+            '-' => result.lines_removed += 1,
+            '\\' => continue, // \ No newline at end of file
+            else => {
+                std.log.err("{s}", .{lin});
+                std.log.err("{s}", .{input});
+                @panic("unreachable");
+            },
+            // zig fmt: on
+        }
+    }
+
+    // Every affected file in the diff has a preamble like below that we don't want to double count.
+    //
+    // diff --git a/notes/all_packages.txt b/notes/all_packages.txt
+    // index c06b41d..e8f91cf 100644
+    // --- a/notes/all_packages.txt
+    // +++ b/notes/all_packages.txt
+    // @@ -89,3 +89,4 @@ freedesktop/xorg/libsm
+    result.lines_added -= result.files_changed;
+    result.lines_removed -= result.files_changed;
+
+    return result;
+}
+
+pub const TreeDiffMeta = struct {
+    files_changed: u16,
+    lines_added: u32,
+    lines_removed: u32,
+};
