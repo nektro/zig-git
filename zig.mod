@@ -4,3 +4,4 @@ main: git.zig
 license: MIT
 description: Inspect into the depths of your .git folder purely from Zig
 dependencies:
+  - src: git https://github.com/nektro/zig-time

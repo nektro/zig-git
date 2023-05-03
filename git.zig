@@ -1,6 +1,7 @@
 const std = @import("std");
 const string = []const u8;
 const top = @This();
+const time = @import("time");
 
 // 40 is length of sha1 hash
 pub const Id = *const [40]u8;
@@ -99,8 +100,8 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
         const k = line[0..space];
 
         if (std.mem.eql(u8, k, "tree")) result.tree = .{ .id = line[space + 1 ..][0..40] };
-        if (std.mem.eql(u8, k, "author")) result.author = line[space + 1 ..];
-        if (std.mem.eql(u8, k, "committer")) result.committer = line[space + 1 ..];
+        if (std.mem.eql(u8, k, "author")) result.author = try parseCommitUserAndAt(line[space + 1 ..]);
+        if (std.mem.eql(u8, k, "committer")) result.committer = try parseCommitUserAndAt(line[space + 1 ..]);
         if (std.mem.eql(u8, k, "parent")) try parents.append(.{ .id = line[space + 1 ..][0..40] });
     }
     result.parents = try parents.toOwnedSlice();
@@ -108,13 +109,39 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
     return result;
 }
 
+fn parseCommitUserAndAt(input: string) !Commit.UserAndAt {
+    // Mitchell Hashimoto <mitchell.hashimoto@gmail.com> 1680797363 -0700
+    // first and second part is https://datatracker.ietf.org/doc/html/rfc5322#section-3.4
+    // third part is unix epoch timestamp
+    // fourth part is TZ
+    var maybe_bad_parser = std.mem.splitBackwards(u8, input, " ");
+    const tz_part = maybe_bad_parser.next() orelse return error.BadCommitTz;
+    const time_part = maybe_bad_parser.next() orelse return error.BadCommitTime;
+    const email_part = maybe_bad_parser.next() orelse return error.BadCommitEmail;
+    const name_part = maybe_bad_parser.rest();
+    _ = tz_part;
+    std.debug.assert(email_part[0] == '<');
+    std.debug.assert(email_part[email_part.len - 1] == '>');
+    return .{
+        .name = name_part,
+        .email = std.mem.trim(u8, email_part, "<>"),
+        .at = time.DateTime.initUnix(try std.fmt.parseInt(u64, time_part, 10)),
+    };
+}
+
 pub const Commit = struct {
     tree: TreeId,
     parents: []const CommitId,
-    author: string,
-    committer: string,
+    author: UserAndAt,
+    committer: UserAndAt,
     gpgsig: string,
     message: string,
+
+    pub const UserAndAt = struct {
+        name: string,
+        email: string,
+        at: time.DateTime,
+    };
 };
 
 pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
