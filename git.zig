@@ -166,12 +166,7 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
         inline for (std.meta.fields(Tree.Object.Id)) |item| {
             if (std.mem.eql(u8, item.name, @tagName(otype))) {
                 try children.append(.{
-                    .mode = .{
-                        .type = @intToEnum(Tree.Object.Type, try std.fmt.parseInt(u16, mode[0..3], 10)),
-                        .perm_user = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, mode[3..][0..1], 8)),
-                        .perm_group = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, mode[4..][0..1], 8)),
-                        .perm_other = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, mode[5..][0..1], 8)),
-                    },
+                    .mode = try parseTreeMode(mode),
                     .id = @unionInit(Tree.Object.Id, item.name, item.type{ .id = id }),
                     .name = name,
                 });
@@ -180,6 +175,16 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
     }
     return Tree{
         .children = try children.toOwnedSlice(),
+    };
+}
+
+fn parseTreeMode(input: string) !Tree.Object.Mode {
+    std.debug.assert(input.len == 6);
+    return .{
+        .type = @intToEnum(Tree.Object.Type, try std.fmt.parseInt(u16, input[0..3], 10)),
+        .perm_user = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[3..][0..1], 8)),
+        .perm_group = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[4..][0..1], 8)),
+        .perm_other = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[5..][0..1], 8)),
     };
 }
 
