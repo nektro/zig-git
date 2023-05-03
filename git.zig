@@ -11,7 +11,7 @@ pub const BlobId = struct { id: Id };
 /// Returns the result of running `git rev-parse HEAD`
 /// dir must already be pointing at the .git folder
 // TODO this doesnt handle when there are 0 commits
-pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !Id {
+pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !CommitId {
     const h = std.mem.trimRight(u8, try dir.readFileAlloc(alloc, "HEAD", 1024), "\n");
 
     if (std.mem.startsWith(u8, h, "ref:")) {
@@ -34,12 +34,12 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !Id {
             break :blk std.mem.trimRight(u8, try dir.readFileAlloc(alloc, h[5..], 1024), "\n");
         };
         std.debug.assert(r.len == 40);
-        return r[0..40];
+        return .{ .id = r[0..40] };
     }
 
     // content should be 40-char sha1 hash
     std.debug.assert(h.len == 40);
-    return h[0..40];
+    return .{ .id = h[0..40] };
 }
 
 // TODO make this inspect .git/objects
