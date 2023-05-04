@@ -34,13 +34,15 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !CommitId {
             }
             break :blk std.mem.trimRight(u8, try dir.readFileAlloc(alloc, h[5..], 1024), "\n");
         };
-        std.debug.assert(r.len == 40);
-        return .{ .id = r[0..40] };
+        return ensureObjId(CommitId, r);
     }
 
-    // content should be 40-char sha1 hash
-    std.debug.assert(h.len == 40);
-    return .{ .id = h[0..40] };
+    return ensureObjId(CommitId, h);
+}
+
+fn ensureObjId(comptime T: type, input: string) T {
+    std.debug.assert(input.len == 40);
+    return .{ .id = input[0..40] };
 }
 
 // TODO make this inspect .git/objects
