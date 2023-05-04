@@ -2,6 +2,7 @@ const std = @import("std");
 const string = []const u8;
 const top = @This();
 const time = @import("time");
+const extras = @import("extras");
 
 // 40 is length of sha1 hash
 pub const Id = *const [40]u8;
@@ -342,4 +343,126 @@ pub const TreeDiffMeta = struct {
     files_changed: u16,
     lines_added: u32,
     lines_removed: u32,
+};
+
+pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
+    var lineiter = std.mem.split(u8, input, "\n");
+    var overview = std.ArrayList(TreeDiff.StateLine).init(alloc);
+    var diffs = std.ArrayList(TreeDiff.Diff).init(alloc);
+
+    while (lineiter.next()) |lin| {
+        if (lin.len == 0) break;
+        std.debug.assert(lin[0] == ':');
+
+        // :100644 100644 c06b41d04c381f1841d445c0072219d9a7f57e17 e8f91cf7dd413ac65a362b0a170951033dba4762 M     notes/all_packages.txt
+        var jter = std.mem.tokenize(u8, lin[1..], " ");
+        const before_mode = try parseTreeMode(jter.next().?);
+        const after_mode = try parseTreeMode(jter.next().?);
+
+        const before_tree = ensureObjId(TreeId, jter.next().?);
+        const after_tree = ensureObjId(TreeId, jter.next().?);
+
+        var kter = std.mem.split(u8, jter.next().?, "\t"); // why is there a tab here git. why?
+        const action_s = kter.next().?;
+
+        try overview.append(.{
+            .before = .{
+                .mode = before_mode,
+                .tree = before_tree,
+            },
+            .after = .{
+                .mode = after_mode,
+                .tree = after_tree,
+            },
+            .action = std.meta.stringToEnum(TreeDiff.Action, action_s).?,
+            .sub_path = kter.rest(),
+        });
+    }
+
+    // diff --git a/notes/all_packages.txt b/notes/all_packages.txt
+    // index c06b41d..e8f91cf 100644
+    // --- a/notes/all_packages.txt
+    // +++ b/notes/all_packages.txt
+    // @@ -89,3 +89,4 @@ freedesktop/xorg/libsm
+    //  freedesktop/xorg/libxt
+    //  freedesktop/xorg/libxmu
+    //  ncompress
+    // +freedesktop/xorg/libxpm
+    std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "diff --git"));
+    blk: while (true) {
+        while (lineiter.next()) |lin| {
+            if (std.mem.startsWith(u8, lin, "index")) break;
+        }
+
+        const before_path_raw = lineiter.next().?;
+        const before_path = extras.trimPrefixEnsure(before_path_raw, "--- a/") orelse extras.trimPrefixEnsure(before_path_raw, "--- ").?;
+
+        const after_path_raw = lineiter.next().?;
+        const after_path = extras.trimPrefixEnsure(after_path_raw, "+++ b/") orelse extras.trimPrefixEnsure(after_path_raw, "+++ ").?;
+
+        const start_index = lineiter.index.?;
+
+        while (lineiter.next()) |lin| {
+            if (std.mem.startsWith(u8, lin, "diff --git")) {
+                const end_index = lineiter.index.? - lin.len - 2;
+                try diffs.append(.{
+                    .before_path = before_path,
+                    .after_path = after_path,
+                    .content = input[start_index..end_index],
+                });
+                continue :blk;
+            }
+        }
+        try diffs.append(.{
+            .before_path = before_path,
+            .after_path = after_path,
+            .content = input[start_index..],
+        });
+        break :blk;
+    }
+
+    return TreeDiff{
+        .overview = overview.items,
+        .diffs = diffs.items,
+    };
+}
+
+pub const TreeDiff = struct {
+    overview: []const StateLine,
+    diffs: []const Diff,
+
+    pub const StateLine = struct {
+        before: State,
+        after: State,
+        action: Action,
+        sub_path: string,
+    };
+
+    pub const State = struct {
+        mode: Tree.Object.Mode,
+        tree: TreeId,
+    };
+
+    pub const Action = enum {
+        A, // Added
+        C, // Copied
+        D, // Deleted
+        M, // Modified
+        R, // Renamed
+        T, // type changed
+        U, // Unmerged
+        X, // Unknown
+        B, // Broken
+
+        pub fn toString(self: Action, alloc: std.mem.Allocator) !string {
+            _ = alloc;
+            return @tagName(self);
+        }
+    };
+
+    pub const Diff = struct {
+        before_path: string,
+        after_path: string,
+        content: string,
+    };
 };
