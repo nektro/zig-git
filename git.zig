@@ -250,6 +250,7 @@ pub const Tree = struct {
             directory = 40,
             submodule = 160,
             symlink = 120,
+            none = 0,
 
             pub fn format(self: Type, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
                 _ = fmt;
@@ -260,6 +261,7 @@ pub const Tree = struct {
                     .directory => 'd',
                     .submodule => 'm',
                     .symlink => '-',
+                    .none => '-',
                 });
             }
         };
