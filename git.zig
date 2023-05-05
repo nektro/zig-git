@@ -312,13 +312,17 @@ pub fn parseTreeDiffMeta(input: string) !TreeDiffMeta {
             'd' => continue, // diff --git a/src/Sema.zig b/src/Sema.zig
                              // deleted file mode 100644
             'n' => continue, // new file mode 100644
-            'B' => continue, // Binary files a/stage1/zig1.wasm and b/stage1/zig1.wasm differ
             'i' => continue, // index 327ff3800..df199be97 100644
             '@' => continue, // @@ -24629,10 +24634,11 @@
             ' ' => continue,
             '+' => result.lines_added += 1,
             '-' => result.lines_removed += 1,
             '\\' => continue, // \ No newline at end of file
+            'B' => {
+                // Binary files a/stage1/zig1.wasm and b/stage1/zig1.wasm differ
+                result.lines_added += 1;
+                result.lines_removed += 1;
+            },
             else => {
                 std.log.err("{s}", .{lin});
                 std.log.err("{s}", .{input});
@@ -397,6 +401,15 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
         }
 
         const before_path_raw = lineiter.next().?;
+        if (std.mem.startsWith(u8, before_path_raw, "Binary files")) {
+            try diffs.append(.{
+                .before_path = overview.items[diffs.items.len].sub_path,
+                .after_path = overview.items[diffs.items.len].sub_path,
+                .content = before_path_raw,
+            });
+            _ = lineiter.index orelse break :blk;
+            continue :blk;
+        }
         const before_path = extras.trimPrefixEnsure(before_path_raw, "--- a/") orelse extras.trimPrefixEnsure(before_path_raw, "--- ").?;
 
         const after_path_raw = lineiter.next().?;
