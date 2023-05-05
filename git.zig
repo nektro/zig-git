@@ -73,6 +73,20 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
     return try std.fmt.parseInt(u64, std.mem.trimRight(u8, result.stdout, "\n"), 10);
 }
 
+// TODO make this inspect .git manually
+// https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
+// https://git-scm.com/book/en/v2/Git-Internals-Packfiles
+pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree.Object.Id.Tag) !?bool {
+    const result = try std.ChildProcess.exec(.{
+        .allocator = alloc,
+        .cwd_dir = dir,
+        .argv = &.{ "git", "cat-file", "-t", maybeobj },
+    });
+    if (result.term != .Exited or result.term.Exited != 0) return null;
+    const output = std.mem.trimRight(u8, result.stdout, "\n");
+    return std.meta.stringToEnum(Tree.Object.Id.Tag, output).? == typ;
+}
+
 // TODO make this inspect .git/objects manually
 // TODO make this return a Reader when we implement it ourselves
 // TODO make a version of this that accepts an array of sub_paths and searches all of them at once, so as to not lose spot in history when searching for many old paths
