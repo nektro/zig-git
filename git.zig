@@ -114,7 +114,7 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
     var parents = std.ArrayList(CommitId).init(alloc);
     errdefer parents.deinit();
     while (true) {
-        const line = iter.next().?;
+        const line = iter.next() orelse break;
         if (line.len == 0) break;
         const space = std.mem.indexOfScalar(u8, line, ' ').?;
         const k = line[0..space];
