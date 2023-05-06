@@ -299,11 +299,22 @@ pub const Tree = struct {
 
 // TODO make this inspect .git manually
 // TODO make this return a Reader when we implement it ourselves
-pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId, parentid: CommitId) !string {
+pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
+    if (parentid == null) {
+        const result = try std.ChildProcess.exec(.{
+            .allocator = alloc,
+            .cwd_dir = dir,
+            // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
+            // result of `printf | git hash-object -t tree --stdin`
+            .argv = &.{ "git", "diff-tree", "-p", "--raw", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id },
+            .max_output_bytes = 1024 * 1024 * 1024,
+        });
+        return std.mem.trim(u8, result.stdout, "\n");
+    }
     const result = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .cwd_dir = dir,
-        .argv = &.{ "git", "diff-tree", "-p", "--raw", parentid.id, commitid.id },
+        .argv = &.{ "git", "diff-tree", "-p", "--raw", parentid.?.id, commitid.id },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
     return std.mem.trim(u8, result.stdout, "\n");
