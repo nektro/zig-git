@@ -303,7 +303,7 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId
     const result = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .cwd_dir = dir,
-        .argv = &.{ "git", "diff-tree", "-p", "--raw", commitid.id, parentid.id },
+        .argv = &.{ "git", "diff-tree", "-p", "--raw", parentid.id, commitid.id },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
     return std.mem.trim(u8, result.stdout, "\n");
