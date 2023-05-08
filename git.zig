@@ -428,6 +428,11 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
     blk: while (true) {
         while (lineiter.next()) |lin| {
             if (std.mem.startsWith(u8, lin, "index")) break;
+            if (std.mem.startsWith(u8, lin, "new file mode")) continue;
+            if (std.mem.startsWith(u8, lin, "deleted file mode")) continue;
+
+            std.log.err("{s}", .{lin});
+            unreachable;
         }
 
         const before_path_raw = lineiter.next().?;
@@ -440,10 +445,10 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             _ = lineiter.index orelse break :blk;
             continue :blk;
         }
-        const before_path = extras.trimPrefixEnsure(before_path_raw, "--- a/") orelse extras.trimPrefixEnsure(before_path_raw, "--- ").?;
+        const before_path = extras.trimPrefixEnsure(before_path_raw, "--- a/") orelse extras.trimPrefixEnsure(before_path_raw, "--- ") orelse @panic(before_path_raw);
 
         const after_path_raw = lineiter.next().?;
-        const after_path = extras.trimPrefixEnsure(after_path_raw, "+++ b/") orelse extras.trimPrefixEnsure(after_path_raw, "+++ ").?;
+        const after_path = extras.trimPrefixEnsure(after_path_raw, "+++ b/") orelse extras.trimPrefixEnsure(after_path_raw, "+++ ") orelse @panic(after_path_raw);
 
         const start_index = lineiter.index.?;
 
