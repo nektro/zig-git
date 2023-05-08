@@ -335,42 +335,54 @@ pub fn parseTreeDiffMeta(input: string) !TreeDiffMeta {
         result.files_changed += 1;
     }
 
-    while (lineiter.next()) |lin| {
-        std.debug.assert(lin.len > 0);
-        switch (lin[0]) {
-            // zig fmt: off
-            'd' => continue, // diff --git a/src/Sema.zig b/src/Sema.zig
-                             // deleted file mode 100644
-            'n' => continue, // new file mode 100644
-            'i' => continue, // index 327ff3800..df199be97 100644
-            '@' => continue, // @@ -24629,10 +24634,11 @@
-            ' ' => continue,
-            '+' => result.lines_added += 1,
-            '-' => result.lines_removed += 1,
-            '\\' => continue, // \ No newline at end of file
-            'B' => {
-                // Binary files a/stage1/zig1.wasm and b/stage1/zig1.wasm differ
-                result.lines_added += 1;
-                result.lines_removed += 1;
-            },
-            else => {
-                std.log.err("{s}", .{lin});
-                std.log.err("{s}", .{input});
-                @panic("unreachable");
-            },
-            // zig fmt: on
-        }
-    }
+    std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "diff --git"));
+    while (true) {
+        while (lineiter.next()) |lin| {
+            if (std.mem.startsWith(u8, lin, "index")) break;
+            if (std.mem.startsWith(u8, lin, "new file mode")) continue;
+            if (std.mem.startsWith(u8, lin, "deleted file mode")) continue;
 
-    // Every affected file in the diff has a preamble like below that we don't want to double count.
-    //
-    // diff --git a/notes/all_packages.txt b/notes/all_packages.txt
-    // index c06b41d..e8f91cf 100644
-    // --- a/notes/all_packages.txt
-    // +++ b/notes/all_packages.txt
-    // @@ -89,3 +89,4 @@ freedesktop/xorg/libsm
-    result.lines_added -= result.files_changed;
-    result.lines_removed -= result.files_changed;
+            std.log.err("{s}", .{lin});
+            unreachable;
+        }
+        if (lineiter.peek() == null) break; // handle empty file being last or being at the end
+
+        if (std.mem.startsWith(u8, lineiter.peek().?, "Binary files")) {
+            _ = lineiter.next().?;
+            result.lines_added += 1;
+            result.lines_removed += 1;
+            if (lineiter.peek() == null) break; // handle binary file being last
+            std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "diff --git"));
+            continue;
+        }
+
+        if (std.mem.startsWith(u8, lineiter.peek().?, "diff --git")) { // handle empty file being in the middle
+            std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "diff --git"));
+            continue;
+        }
+
+        // Every affected text file in the diff has a preamble like below
+        //
+        // diff --git a/notes/all_packages.txt b/notes/all_packages.txt
+        // index c06b41d..e8f91cf 100644
+        // --- a/notes/all_packages.txt
+        // +++ b/notes/all_packages.txt
+        std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "---"));
+        std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "+++"));
+
+        while (lineiter.next()) |lin| {
+            if (std.mem.startsWith(u8, lin, "diff --git")) break;
+            switch (lin[0]) {
+                '@' => continue, // @@ -89,3 +89,4 @@ freedesktop/xorg/libsm
+                ' ' => continue,
+                '+' => result.lines_added += 1,
+                '-' => result.lines_removed += 1,
+                '\\' => continue, // \ No newline at end of file
+                else => @panic(lin),
+            }
+        }
+        if (lineiter.peek() == null) break; // handle being at the end
+    }
 
     return result;
 }
@@ -435,7 +447,15 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             unreachable;
         }
 
-        const before_path_raw = lineiter.next().?;
+        const before_path_raw = lineiter.next() orelse {
+            // empty file diff has nothing after 'index' line and this branch handles when its the last item
+            try diffs.append(.{
+                .before_path = overview.items[diffs.items.len].sub_path,
+                .after_path = overview.items[diffs.items.len].sub_path,
+                .content = "",
+            });
+            break;
+        };
         if (std.mem.startsWith(u8, before_path_raw, "Binary files")) {
             try diffs.append(.{
                 .before_path = overview.items[diffs.items.len].sub_path,
@@ -443,6 +463,16 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
                 .content = before_path_raw,
             });
             _ = lineiter.index orelse break :blk;
+            std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "diff --git"));
+            continue :blk;
+        }
+        if (std.mem.startsWith(u8, before_path_raw, "diff --git")) {
+            // empty file in the middle, no diff
+            try diffs.append(.{
+                .before_path = overview.items[diffs.items.len].sub_path,
+                .after_path = overview.items[diffs.items.len].sub_path,
+                .content = "",
+            });
             continue :blk;
         }
         const before_path = extras.trimPrefixEnsure(before_path_raw, "--- a/") orelse extras.trimPrefixEnsure(before_path_raw, "--- ") orelse @panic(before_path_raw);
