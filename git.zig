@@ -57,6 +57,7 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
         .argv = &.{ "git", "cat-file", "-p", obj },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
+    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     return std.mem.trimRight(u8, result.stdout, "\n");
 }
 
@@ -70,6 +71,7 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
         .cwd_dir = dir,
         .argv = &.{ "git", "cat-file", "-s", obj },
     });
+    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     return try std.fmt.parseInt(u64, std.mem.trimRight(u8, result.stdout, "\n"), 10);
 }
 
@@ -105,6 +107,7 @@ pub fn revList(alloc: std.mem.Allocator, dir: std.fs.Dir, comptime count: u31, f
             sub_path,
         },
     });
+    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     return std.mem.trimRight(u8, result.stdout, "\n");
 }
 
@@ -309,6 +312,7 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId
             .argv = &.{ "git", "diff-tree", "-p", "--raw", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id },
             .max_output_bytes = 1024 * 1024 * 1024,
         });
+        std.debug.assert(result.term == .Exited and result.term.Exited == 0);
         return std.mem.trim(u8, result.stdout, "\n");
     }
     const result = try std.ChildProcess.exec(.{
@@ -317,6 +321,7 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId
         .argv = &.{ "git", "diff-tree", "-p", "--raw", parentid.?.id, commitid.id },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
+    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     return std.mem.trim(u8, result.stdout, "\n");
 }
 
