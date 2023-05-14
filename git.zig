@@ -336,11 +336,14 @@ pub fn parseTreeDiffMeta(input: string) !TreeDiffMeta {
     }
 
     std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "diff --git"));
-    while (true) {
+    blk: while (true) {
         while (lineiter.next()) |lin| {
             if (std.mem.startsWith(u8, lin, "index")) break;
             if (std.mem.startsWith(u8, lin, "new file mode")) continue;
             if (std.mem.startsWith(u8, lin, "deleted file mode")) continue;
+            if (std.mem.startsWith(u8, lin, "old mode")) continue;
+            if (std.mem.startsWith(u8, lin, "new mode")) continue;
+            if (std.mem.startsWith(u8, lin, "diff --git")) continue :blk;
 
             std.log.err("{s}", .{lin});
             unreachable;
@@ -442,6 +445,8 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             if (std.mem.startsWith(u8, lin, "index")) break;
             if (std.mem.startsWith(u8, lin, "new file mode")) continue;
             if (std.mem.startsWith(u8, lin, "deleted file mode")) continue;
+            if (std.mem.startsWith(u8, lin, "old mode")) continue;
+            if (std.mem.startsWith(u8, lin, "new mode")) continue;
 
             std.log.err("{s}", .{lin});
             unreachable;
