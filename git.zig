@@ -551,3 +551,30 @@ pub const TreeDiff = struct {
         content: string,
     };
 };
+
+pub fn getBranches(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
+    const result = try std.ChildProcess.exec(.{
+        .allocator = alloc,
+        .cwd_dir = dir,
+        .argv = &.{ "git", "show-ref", "--heads" },
+        .max_output_bytes = 1024 * 1024 * 1024,
+    });
+    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    const output = std.mem.trimRight(u8, result.stdout, "\n");
+    var iter = std.mem.split(u8, output, "\n");
+    var list = std.ArrayList(Ref).init(alloc);
+    errdefer list.deinit();
+    while (iter.next()) |line| {
+        var jter = std.mem.split(u8, line, " ");
+        try list.append(.{
+            .commit = ensureObjId(CommitId, jter.next().?),
+            .label = extras.trimPrefixEnsure(jter.rest(), "refs/heads/").?,
+        });
+    }
+    return list.toOwnedSlice();
+}
+
+pub const Ref = struct {
+    label: string,
+    commit: CommitId,
+};
