@@ -10,6 +10,16 @@ pub const TreeId = struct { id: Id };
 pub const CommitId = struct { id: Id };
 pub const BlobId = struct { id: Id };
 
+pub fn version(alloc: std.mem.Allocator) !string {
+    const result = try std.ChildProcess.exec(.{
+        .allocator = alloc,
+        .argv = &.{ "git", "--version" },
+        .max_output_bytes = 1024,
+    });
+    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    return extras.trimPrefixEnsure(std.mem.trimRight(u8, result.stdout, "\n"), "git version ").?;
+}
+
 /// Returns the result of running `git rev-parse HEAD`
 /// dir must already be pointing at the .git folder
 // TODO this doesnt handle when there are 0 commits
