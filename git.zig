@@ -16,8 +16,10 @@ pub fn version(alloc: std.mem.Allocator) !string {
         .argv = &.{ "git", "--version" },
         .max_output_bytes = 1024,
     });
+    defer alloc.free(result.stdout);
+    defer alloc.free(result.stderr);
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
-    return extras.trimPrefixEnsure(std.mem.trimRight(u8, result.stdout, "\n"), "git version ").?;
+    return try alloc.dupe(u8, extras.trimPrefixEnsure(std.mem.trimRight(u8, result.stdout, "\n"), "git version ").?);
 }
 
 /// Returns the result of running `git rev-parse HEAD`
