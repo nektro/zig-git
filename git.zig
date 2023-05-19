@@ -9,6 +9,7 @@ pub const Id = *const [40]u8;
 pub const TreeId = struct { id: Id };
 pub const CommitId = struct { id: Id };
 pub const BlobId = struct { id: Id };
+pub const TagId = struct { id: Id };
 
 pub fn version(alloc: std.mem.Allocator) !string {
     const result = try std.ChildProcess.exec(.{
@@ -99,6 +100,20 @@ pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree
     if (result.term != .Exited or result.term.Exited != 0) return null;
     const output = std.mem.trimRight(u8, result.stdout, "\n");
     return std.meta.stringToEnum(Tree.Object.Id.Tag, output).? == typ;
+}
+
+// TODO make this inspect .git manually
+// https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
+// https://git-scm.com/book/en/v2/Git-Internals-Packfiles
+pub fn getType(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !Tree.Object.Id.Tag {
+    const result = try std.ChildProcess.exec(.{
+        .allocator = alloc,
+        .cwd_dir = dir,
+        .argv = &.{ "git", "cat-file", "-t", obj },
+    });
+    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    const output = std.mem.trimRight(u8, result.stdout, "\n");
+    return std.meta.stringToEnum(Tree.Object.Id.Tag, output) orelse @panic(output);
 }
 
 // TODO make this inspect .git/objects manually
@@ -247,6 +262,7 @@ pub const Tree = struct {
             blob: BlobId,
             tree: TreeId,
             commit: CommitId,
+            tag: TagId,
 
             pub const Tag = std.meta.Tag(@This());
 
@@ -578,10 +594,60 @@ pub fn getBranches(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
     errdefer list.deinit();
     while (iter.next()) |line| {
         var jter = std.mem.split(u8, line, " ");
-        try list.append(.{
+        try list.append(Ref{
             .commit = ensureObjId(CommitId, jter.next().?),
             .label = extras.trimPrefixEnsure(jter.rest(), "refs/heads/").?,
+            .tag = null,
         });
+    }
+    return list.toOwnedSlice();
+}
+
+pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
+    const result = try std.ChildProcess.exec(.{
+        .allocator = alloc,
+        .cwd_dir = dir,
+        .argv = &.{ "git", "show-ref", "--tags", "--dereference" },
+        .max_output_bytes = 1024 * 1024 * 1024,
+    });
+    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    const output = std.mem.trimRight(u8, result.stdout, "\n");
+    var iter = std.mem.split(u8, output, "\n");
+    var list = std.ArrayList(Ref).init(alloc);
+    errdefer list.deinit();
+    while (iter.next()) |line| {
+        var jter = std.mem.split(u8, line, " ");
+        const id = ensureObjId(CommitId, jter.next().?).id;
+        const label = extras.trimPrefixEnsure(jter.rest(), "refs/tags/").?;
+        extras.assertLog(!std.mem.endsWith(u8, label, "^{}"), label);
+
+        switch (try getType(alloc, dir, id)) {
+            .tree => continue,
+            .blob => unreachable,
+            .commit => {
+                try list.append(Ref{
+                    .label = label,
+                    .commit = ensureObjId(CommitId, id),
+                    .tag = null,
+                });
+            },
+            .tag => {
+                const derefline = iter.next().?;
+                var kter = std.mem.split(u8, derefline, " ");
+                const id2 = ensureObjId(CommitId, kter.next().?).id;
+                const label2 = extras.trimPrefixEnsure(kter.rest(), "refs/tags/").?;
+                extras.assertLog(std.mem.endsWith(u8, label2, "^{}"), label2);
+                std.debug.assert(std.mem.eql(u8, label, extras.trimSuffixEnsure(label2, "^{}").?));
+                // extras.assertLog(try isType(alloc, dir, id2, .commit), id2); // linux kernel has a single tag that points at a tree
+                if (!(try isType(alloc, dir, id2, .commit)).?) continue;
+
+                try list.append(Ref{
+                    .label = label,
+                    .commit = ensureObjId(CommitId, id2),
+                    .tag = ensureObjId(TagId, id),
+                });
+            },
+        }
     }
     return list.toOwnedSlice();
 }
@@ -589,4 +655,5 @@ pub fn getBranches(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
 pub const Ref = struct {
     label: string,
     commit: CommitId,
+    tag: ?TagId,
 };
