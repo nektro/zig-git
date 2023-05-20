@@ -55,7 +55,7 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !CommitId {
 }
 
 fn ensureObjId(comptime T: type, input: string) T {
-    std.debug.assert(input.len == 40);
+    extras.assertLog(input.len == 40, input);
     return .{ .id = input[0..40] };
 }
 
