@@ -610,6 +610,7 @@ pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
         .argv = &.{ "git", "show-ref", "--tags", "--dereference" },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
+    if (result.term == .Exited and result.term.Exited == 1) return &.{}; // show-ref exits 1 when there are no tags
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     const output = std.mem.trimRight(u8, result.stdout, "\n");
     var iter = std.mem.split(u8, output, "\n");
