@@ -363,7 +363,7 @@ pub fn parseTreeDiffMeta(input: string) !TreeDiffMeta {
         result.files_changed += 1;
     }
 
-    std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "diff --git"));
+    std.debug.assert(std.mem.startsWith(u8, lineiter.next() orelse return result, "diff --git"));
     blk: while (true) {
         while (lineiter.next()) |lin| {
             if (std.mem.startsWith(u8, lin, "index")) break;
@@ -467,7 +467,7 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
     //  freedesktop/xorg/libxmu
     //  ncompress
     // +freedesktop/xorg/libxpm
-    std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "diff --git"));
+    std.debug.assert(std.mem.startsWith(u8, lineiter.next() orelse return std.mem.zeroes(TreeDiff), "diff --git"));
     blk: while (true) {
         while (lineiter.next()) |lin| {
             if (std.mem.startsWith(u8, lin, "index")) break;
