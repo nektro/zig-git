@@ -30,9 +30,16 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !CommitId {
     const h = std.mem.trimRight(u8, try dir.readFileAlloc(alloc, "HEAD", 1024), "\n");
 
     if (std.mem.startsWith(u8, h, "ref:")) {
-        const r = blk: {
+        blk: {
+            const reffile = dir.readFileAlloc(alloc, h[5..], 1024) catch |err| switch (err) {
+                error.FileNotFound => break :blk,
+                else => |e| return e,
+            };
+            return ensureObjId(CommitId, std.mem.trimRight(u8, reffile, "\n"));
+        }
+        blk: {
             const pckedrfs = dir.readFileAlloc(alloc, "packed-refs", 1024 * 1024 * 1024) catch |err| switch (err) {
-                error.FileNotFound => try std.fs.cwd().readFileAlloc(alloc, "/dev/null", 1024),
+                error.FileNotFound => break :blk,
                 else => |e| return e,
             };
             var iter = std.mem.split(u8, pckedrfs, "\n");
@@ -44,11 +51,10 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !CommitId {
                 const objid = jter.next().?;
                 const ref = jter.next().?;
                 std.debug.assert(jter.next() == null);
-                if (std.mem.eql(u8, h[5..], ref)) break :blk objid;
+                if (std.mem.eql(u8, h[5..], ref)) return ensureObjId(CommitId, objid);
             }
-            break :blk std.mem.trimRight(u8, try dir.readFileAlloc(alloc, h[5..], 1024), "\n");
-        };
-        return ensureObjId(CommitId, r);
+        }
+        unreachable;
     }
 
     return ensureObjId(CommitId, h);
