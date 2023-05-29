@@ -178,10 +178,26 @@ fn parseCommitUserAndAt(input: string) !Commit.UserAndAt {
     _ = tz_part;
     std.debug.assert(email_part[0] == '<');
     std.debug.assert(email_part[email_part.len - 1] == '>');
+    const name = name_part;
+    const email = std.mem.trim(u8, email_part, "<>");
+    const at = time.DateTime.initUnix(try std.fmt.parseInt(u64, time_part, 10));
+    const email_md5 = blk: {
+        const Algo = std.crypto.hash.Md5;
+        var h = Algo.init(.{});
+        var out: [Algo.digest_length]u8 = undefined;
+        h.update(email);
+        h.final(&out);
+        var res: [Algo.digest_length * 2]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&res);
+        try std.fmt.format(fbs.writer(), "{x}", .{std.fmt.fmtSliceHexLower(&out)});
+        break :blk res;
+    };
+
     return .{
-        .name = name_part,
-        .email = std.mem.trim(u8, email_part, "<>"),
-        .at = time.DateTime.initUnix(try std.fmt.parseInt(u64, time_part, 10)),
+        .name = name,
+        .email = email,
+        .email_md5 = email_md5,
+        .at = at,
     };
 }
 
@@ -196,6 +212,7 @@ pub const Commit = struct {
     pub const UserAndAt = struct {
         name: string,
         email: string,
+        email_md5: [std.crypto.hash.Md5.digest_length * 2]u8,
         at: time.DateTime,
     };
 };
