@@ -61,7 +61,7 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !CommitId {
 }
 
 fn ensureObjId(comptime T: type, input: string) T {
-    extras.assertLog(input.len == 40, input);
+    extras.assertLog(input.len == 40, "ensureObjId: {s}", .{input});
     return .{ .id = input[0..40] };
 }
 
@@ -643,7 +643,7 @@ pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
         var jter = std.mem.split(u8, line, " ");
         const id = ensureObjId(CommitId, jter.next().?).id;
         const label = extras.trimPrefixEnsure(jter.rest(), "refs/tags/").?;
-        extras.assertLog(!std.mem.endsWith(u8, label, "^{}"), label);
+        extras.assertLog(!std.mem.endsWith(u8, label, "^{}"), "{s}", .{label});
 
         switch (try getType(alloc, dir, id)) {
             .tree => continue,
@@ -660,7 +660,7 @@ pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
                 var kter = std.mem.split(u8, derefline, " ");
                 const id2 = ensureObjId(CommitId, kter.next().?).id;
                 const label2 = extras.trimPrefixEnsure(kter.rest(), "refs/tags/").?;
-                extras.assertLog(std.mem.endsWith(u8, label2, "^{}"), label2);
+                extras.assertLog(std.mem.endsWith(u8, label2, "^{}"), "{s}", .{label2});
                 std.debug.assert(std.mem.eql(u8, label, extras.trimSuffixEnsure(label2, "^{}").?));
                 // extras.assertLog(try isType(alloc, dir, id2, .commit), id2); // linux kernel has a single tag that points at a tree
                 if (!(try isType(alloc, dir, id2, .commit)).?) continue;
