@@ -26,7 +26,7 @@ pub fn version(alloc: std.mem.Allocator) !string {
 /// Returns the result of running `git rev-parse HEAD`
 /// dir must already be pointing at the .git folder
 // TODO this doesnt handle when there are 0 commits
-pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !CommitId {
+pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !?CommitId {
     const h = std.mem.trimRight(u8, try dir.readFileAlloc(alloc, "HEAD", 1024), "\n");
 
     if (std.mem.startsWith(u8, h, "ref:")) {
@@ -54,7 +54,7 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !CommitId {
                 if (std.mem.eql(u8, h[5..], ref)) return ensureObjId(CommitId, objid);
             }
         }
-        unreachable;
+        return null;
     }
 
     return ensureObjId(CommitId, h);
