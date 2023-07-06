@@ -76,7 +76,7 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
         .argv = &.{ "git", "cat-file", "-p", obj },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
-    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    extras.assertLog(result.term == .Exited and result.term.Exited == 0, "{s}", .{result.stderr});
     return std.mem.trimRight(u8, result.stdout, "\n");
 }
 
@@ -90,7 +90,7 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
         .cwd_dir = dir,
         .argv = &.{ "git", "cat-file", "-s", obj },
     });
-    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    extras.assertLog(result.term == .Exited and result.term.Exited == 0, "{s}", .{result.stderr});
     return try std.fmt.parseInt(u64, std.mem.trimRight(u8, result.stdout, "\n"), 10);
 }
 
