@@ -251,10 +251,10 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
 fn parseTreeMode(input: string) !Tree.Object.Mode {
     std.debug.assert(input.len == 6);
     return .{
-        .type = @intToEnum(Tree.Object.Type, try std.fmt.parseInt(u16, input[0..3], 10)),
-        .perm_user = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[3..][0..1], 8)),
-        .perm_group = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[4..][0..1], 8)),
-        .perm_other = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[5..][0..1], 8)),
+        .type = @enumFromInt(try std.fmt.parseInt(u16, input[0..3], 10)),
+        .perm_user = @bitCast(try std.fmt.parseInt(u3, input[3..][0..1], 8)),
+        .perm_group = @bitCast(try std.fmt.parseInt(u3, input[4..][0..1], 8)),
+        .perm_other = @bitCast(try std.fmt.parseInt(u3, input[5..][0..1], 8)),
     };
 }
 
