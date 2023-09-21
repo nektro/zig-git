@@ -6,3 +6,4 @@ description: Inspect into the depths of your .git folder purely from Zig
 dependencies:
   - src: git https://github.com/nektro/zig-time
   - src: git https://github.com/nektro/zig-extras
+  - src: git https://github.com/nektro/zig-tracer

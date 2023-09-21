@@ -3,6 +3,7 @@ const string = []const u8;
 const top = @This();
 const time = @import("time");
 const extras = @import("extras");
+const tracer = @import("tracer");
 
 // 40 is length of sha1 hash
 pub const Id = *const [40]u8;
@@ -27,6 +28,9 @@ pub fn version(alloc: std.mem.Allocator) !string {
 /// dir must already be pointing at the .git folder
 // TODO this doesnt handle when there are 0 commits
 pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !?CommitId {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     const h = std.mem.trimRight(u8, try dir.readFileAlloc(alloc, "HEAD", 1024), "\n");
 
     if (std.mem.startsWith(u8, h, "ref:")) {
@@ -70,6 +74,9 @@ fn ensureObjId(comptime T: type, input: string) T {
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     const result = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .cwd_dir = dir,
@@ -85,6 +92,9 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     const result = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .cwd_dir = dir,
@@ -98,6 +108,9 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree.Object.Id.Tag) !?bool {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     const result = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .cwd_dir = dir,
@@ -112,6 +125,9 @@ pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn getType(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !Tree.Object.Id.Tag {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     const result = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .cwd_dir = dir,
@@ -128,6 +144,9 @@ pub fn getType(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !Tree.Object.
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn revList(alloc: std.mem.Allocator, dir: std.fs.Dir, comptime count: u31, from: CommitId, sub_path: string) !string {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     const result = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .cwd_dir = dir,
@@ -145,6 +164,9 @@ pub fn revList(alloc: std.mem.Allocator, dir: std.fs.Dir, comptime count: u31, f
 }
 
 pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     var iter = std.mem.split(u8, commitfile, "\n");
     var result: Commit = undefined;
     var parents = std.ArrayList(CommitId).init(alloc);
@@ -166,6 +188,9 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
 }
 
 fn parseCommitUserAndAt(input: string) !Commit.UserAndAt {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     // Mitchell Hashimoto <mitchell.hashimoto@gmail.com> 1680797363 -0700
     // first and second part is https://datatracker.ietf.org/doc/html/rfc5322#section-3.4
     // third part is unix epoch timestamp
@@ -218,6 +243,9 @@ pub const Commit = struct {
 };
 
 pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     var iter = std.mem.split(u8, treefile, "\n");
     var children = std.ArrayList(Tree.Object).init(alloc);
     errdefer children.deinit();
@@ -249,6 +277,9 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
 }
 
 fn parseTreeMode(input: string) !Tree.Object.Mode {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     std.debug.assert(input.len == 6);
     return .{
         .type = @enumFromInt(try std.fmt.parseInt(u16, input[0..3], 10)),
@@ -354,6 +385,9 @@ pub const Tree = struct {
 // TODO make this inspect .git manually
 // TODO make this return a Reader when we implement it ourselves
 pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     if (parentid == null) {
         const result = try std.ChildProcess.exec(.{
             .allocator = alloc,
@@ -377,6 +411,9 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId
 }
 
 pub fn parseTreeDiffMeta(input: string) !TreeDiffMeta {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     var result = std.mem.zeroes(TreeDiffMeta);
     var lineiter = std.mem.split(u8, input, "\n");
 
@@ -448,6 +485,9 @@ pub const TreeDiffMeta = struct {
 };
 
 pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     var lineiter = std.mem.split(u8, input, "\n");
     var overview = std.ArrayList(TreeDiff.StateLine).init(alloc);
     var diffs = std.ArrayList(TreeDiff.Diff).init(alloc);
@@ -604,6 +644,9 @@ pub const TreeDiff = struct {
 };
 
 pub fn getBranches(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
+    const t = tracer.trace(@src());
+    defer t.end();
+
     const result = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .cwd_dir = dir,
@@ -627,6 +670,13 @@ pub fn getBranches(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
 }
 
 pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
+    const t = tracer.trace(@src());
+    defer t.end();
+
+    // 97bc4b5f87656a34139e1a8122866c8c5b432598 refs/tags/1.2.5
+    // a450a23e318c5a8fcba5a52c8fdc2e23584650b3 refs/tags/1.2.5^{}
+    // 71264720050572b7bad24532ff39951f47d9296a refs/tags/15.3.1
+    // 7dfd3948a9095f0253bfba60fed52895ffbf84bb refs/tags/15.3.2
     const result = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .cwd_dir = dir,
