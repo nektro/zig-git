@@ -28,7 +28,7 @@ pub fn version(alloc: std.mem.Allocator) !string {
 /// dir must already be pointing at the .git folder
 // TODO this doesnt handle when there are 0 commits
 pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !?CommitId {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     const h = std.mem.trimRight(u8, try dir.readFileAlloc(alloc, "HEAD", 1024), "\n");
@@ -74,7 +74,7 @@ fn ensureObjId(comptime T: type, input: string) T {
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     const result = try std.ChildProcess.exec(.{
@@ -92,7 +92,7 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     const result = try std.ChildProcess.exec(.{
@@ -108,7 +108,7 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree.Object.Id.Tag) !?bool {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     const result = try std.ChildProcess.exec(.{
@@ -125,7 +125,7 @@ pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn getType(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !Tree.Object.Id.Tag {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     const result = try std.ChildProcess.exec(.{
@@ -144,7 +144,7 @@ pub fn getType(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !Tree.Object.
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn revList(alloc: std.mem.Allocator, dir: std.fs.Dir, comptime count: u31, from: CommitId, sub_path: string) !string {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     const result = try std.ChildProcess.exec(.{
@@ -164,7 +164,7 @@ pub fn revList(alloc: std.mem.Allocator, dir: std.fs.Dir, comptime count: u31, f
 }
 
 pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     var iter = std.mem.split(u8, commitfile, "\n");
@@ -188,7 +188,7 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
 }
 
 fn parseCommitUserAndAt(input: string) !Commit.UserAndAt {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     // Mitchell Hashimoto <mitchell.hashimoto@gmail.com> 1680797363 -0700
@@ -243,7 +243,7 @@ pub const Commit = struct {
 };
 
 pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     var iter = std.mem.split(u8, treefile, "\n");
@@ -277,7 +277,7 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
 }
 
 fn parseTreeMode(input: string) !Tree.Object.Mode {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     std.debug.assert(input.len == 6);
@@ -385,7 +385,7 @@ pub const Tree = struct {
 // TODO make this inspect .git manually
 // TODO make this return a Reader when we implement it ourselves
 pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     if (parentid == null) {
@@ -411,7 +411,7 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId
 }
 
 pub fn parseTreeDiffMeta(input: string) !TreeDiffMeta {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     var result = std.mem.zeroes(TreeDiffMeta);
@@ -485,7 +485,7 @@ pub const TreeDiffMeta = struct {
 };
 
 pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     var lineiter = std.mem.split(u8, input, "\n");
@@ -644,7 +644,7 @@ pub const TreeDiff = struct {
 };
 
 pub fn getBranches(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     const result = try std.ChildProcess.exec(.{
@@ -670,7 +670,7 @@ pub fn getBranches(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
 }
 
 pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
-    const t = tracer.trace(@src());
+    const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     // 97bc4b5f87656a34139e1a8122866c8c5b432598 refs/tags/1.2.5
