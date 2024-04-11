@@ -74,7 +74,7 @@ fn ensureObjId(comptime T: type, input: string) T {
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
-    const t = tracer.trace(@src(), "", .{});
+    const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
     const result = try std.ChildProcess.exec(.{
@@ -92,7 +92,7 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
-    const t = tracer.trace(@src(), "", .{});
+    const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
     const result = try std.ChildProcess.exec(.{
@@ -108,7 +108,7 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree.Object.Id.Tag) !?bool {
-    const t = tracer.trace(@src(), "", .{});
+    const t = tracer.trace(@src(), " {s} = {s} ?", .{ maybeobj, @tagName(typ) });
     defer t.end();
 
     const result = try std.ChildProcess.exec(.{
@@ -125,7 +125,7 @@ pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn getType(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !Tree.Object.Id.Tag {
-    const t = tracer.trace(@src(), "", .{});
+    const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
     const result = try std.ChildProcess.exec(.{
@@ -144,7 +144,7 @@ pub fn getType(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !Tree.Object.
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn revList(alloc: std.mem.Allocator, dir: std.fs.Dir, comptime count: u31, from: CommitId, sub_path: string) !string {
-    const t = tracer.trace(@src(), "", .{});
+    const t = tracer.trace(@src(), "({d}) {s} -- {s}", .{ count, from.id, sub_path });
     defer t.end();
 
     const result = try std.ChildProcess.exec(.{
