@@ -518,6 +518,8 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             },
             .action = std.meta.stringToEnum(TreeDiff.Action, action_s).?,
             .sub_path = kter.rest(),
+            .adds = 0,
+            .subs = 0,
         });
     }
 
@@ -581,18 +583,24 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
         while (lineiter.next()) |lin| {
             if (std.mem.startsWith(u8, lin, "diff --git")) {
                 const end_index = lineiter.index.? - lin.len - 2;
+                const content = input[start_index..end_index];
+                overview.items[diffs.items.len].adds = @intCast(std.mem.count(u8, content, "\n+"));
+                overview.items[diffs.items.len].subs = @intCast(std.mem.count(u8, content, "\n-"));
                 try diffs.append(.{
                     .before_path = before_path,
                     .after_path = after_path,
-                    .content = input[start_index..end_index],
+                    .content = content,
                 });
                 continue :blk;
             }
         }
+        const content = input[start_index..];
+        overview.items[diffs.items.len].adds = @intCast(std.mem.count(u8, content, "\n+"));
+        overview.items[diffs.items.len].subs = @intCast(std.mem.count(u8, content, "\n-"));
         try diffs.append(.{
             .before_path = before_path,
             .after_path = after_path,
-            .content = input[start_index..],
+            .content = content,
         });
         break :blk;
     }
@@ -612,6 +620,8 @@ pub const TreeDiff = struct {
         after: State,
         action: Action,
         sub_path: string,
+        adds: u16,
+        subs: u16,
     };
 
     pub const State = struct {
