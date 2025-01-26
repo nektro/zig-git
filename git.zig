@@ -13,7 +13,7 @@ pub const BlobId = struct { id: Id };
 pub const TagId = struct { id: Id };
 
 pub fn version(alloc: std.mem.Allocator) !string {
-    const result = try std.ChildProcess.exec(.{
+    const result = try std.process.Child.run(.{
         .allocator = alloc,
         .argv = &.{ "git", "--version" },
         .max_output_bytes = 1024,
@@ -77,7 +77,7 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
     const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
-    const result = try std.ChildProcess.exec(.{
+    const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir,
         .argv = &.{ "git", "cat-file", "-p", obj },
@@ -95,7 +95,7 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
     const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
-    const result = try std.ChildProcess.exec(.{
+    const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir,
         .argv = &.{ "git", "cat-file", "-s", obj },
@@ -111,7 +111,7 @@ pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree
     const t = tracer.trace(@src(), " {s} = {s} ?", .{ maybeobj, @tagName(typ) });
     defer t.end();
 
-    const result = try std.ChildProcess.exec(.{
+    const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir,
         .argv = &.{ "git", "cat-file", "-t", maybeobj },
@@ -128,7 +128,7 @@ pub fn getType(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !Tree.Object.
     const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
-    const result = try std.ChildProcess.exec(.{
+    const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir,
         .argv = &.{ "git", "cat-file", "-t", obj },
@@ -147,7 +147,7 @@ pub fn revList(alloc: std.mem.Allocator, dir: std.fs.Dir, comptime count: u31, f
     const t = tracer.trace(@src(), "({d}) {s} -- {s}", .{ count, from.id, sub_path });
     defer t.end();
 
-    const result = try std.ChildProcess.exec(.{
+    const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir,
         .argv = &.{
@@ -389,7 +389,7 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId
     defer t.end();
 
     if (parentid == null) {
-        const result = try std.ChildProcess.exec(.{
+        const result = try std.process.Child.run(.{
             .allocator = alloc,
             .cwd_dir = dir,
             // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
@@ -400,7 +400,7 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId
         std.debug.assert(result.term == .Exited and result.term.Exited == 0);
         return std.mem.trim(u8, result.stdout, "\n");
     }
-    const result = try std.ChildProcess.exec(.{
+    const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir,
         .argv = &.{ "git", "diff-tree", "-p", "--raw", parentid.?.id, commitid.id },
@@ -657,7 +657,7 @@ pub fn getBranches(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
-    const result = try std.ChildProcess.exec(.{
+    const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir,
         .argv = &.{ "git", "show-ref", "--heads" },
@@ -687,7 +687,7 @@ pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
     // a450a23e318c5a8fcba5a52c8fdc2e23584650b3 refs/tags/1.2.5^{}
     // 71264720050572b7bad24532ff39951f47d9296a refs/tags/15.3.1
     // 7dfd3948a9095f0253bfba60fed52895ffbf84bb refs/tags/15.3.2
-    const result = try std.ChildProcess.exec(.{
+    const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir,
         .argv = &.{ "git", "show-ref", "--tags", "--dereference" },
