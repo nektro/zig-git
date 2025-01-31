@@ -7,3 +7,6 @@ dependencies:
   - src: git https://github.com/nektro/zig-time
   - src: git https://github.com/nektro/zig-extras
   - src: git https://github.com/nektro/zig-tracer
+root_dependencies:
+  - src: git https://github.com/nektro/zig-extras
+  - src: git https://github.com/nektro/zig-expect
