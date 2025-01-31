@@ -112,7 +112,7 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
         .max_output_bytes = 1024 * 1024 * 1024,
     });
     extras.assertLog(result.term == .Exited and result.term.Exited == 0, "{s}", .{result.stderr});
-    return std.mem.trimRight(u8, result.stdout, "\n");
+    return result.stdout;
 }
 
 // TODO make this inspect .git/objects manually
@@ -277,6 +277,10 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
     errdefer children.deinit();
 
     while (iter.next()) |line| {
+        if (line.len == 0) {
+            std.debug.assert(iter.peek() == null);
+            break;
+        }
         var jter = std.mem.split(u8, line, " ");
         const mode = jter.next().?;
         const otype = std.meta.stringToEnum(Tree.Object.Id.Tag, jter.next().?).?;
