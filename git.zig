@@ -7,10 +7,38 @@ const tracer = @import("tracer");
 
 // 40 is length of sha1 hash
 pub const Id = *const [40]u8;
-pub const TreeId = struct { id: Id };
-pub const CommitId = struct { id: Id };
-pub const BlobId = struct { id: Id };
-pub const TagId = struct { id: Id };
+
+pub const TreeId = struct {
+    id: Id,
+
+    pub fn eql(self: TreeId, other: TreeId) bool {
+        return std.mem.eql(u8, self.id, other.id);
+    }
+};
+
+pub const CommitId = struct {
+    id: Id,
+
+    pub fn eql(self: CommitId, other: CommitId) bool {
+        return std.mem.eql(u8, self.id, other.id);
+    }
+};
+
+pub const BlobId = struct {
+    id: Id,
+
+    pub fn eql(self: BlobId, other: BlobId) bool {
+        return std.mem.eql(u8, self.id, other.id);
+    }
+};
+
+pub const TagId = struct {
+    id: Id,
+
+    pub fn eql(self: TagId, other: TagId) bool {
+        return std.mem.eql(u8, self.id, other.id);
+    }
+};
 
 pub fn version(alloc: std.mem.Allocator) !string {
     const result = try std.process.Child.run(.{
