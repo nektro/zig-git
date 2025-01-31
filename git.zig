@@ -257,7 +257,6 @@ pub const Commit = struct {
     parents: []const CommitId,
     author: UserAndAt,
     committer: UserAndAt,
-    gpgsig: string,
     message: string,
 
     pub const UserAndAt = struct {
