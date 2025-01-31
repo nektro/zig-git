@@ -134,7 +134,7 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
 // TODO make this inspect .git manually
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree.Object.Id.Tag) !?bool {
+pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree.Object.Id.Tag) !bool {
     const t = tracer.trace(@src(), " {s} = {s} ?", .{ maybeobj, @tagName(typ) });
     defer t.end();
 
@@ -143,7 +143,7 @@ pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree
         .cwd_dir = dir,
         .argv = &.{ "git", "cat-file", "-t", maybeobj },
     });
-    if (result.term != .Exited or result.term.Exited != 0) return null;
+    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     const output = std.mem.trimRight(u8, result.stdout, "\n");
     return std.meta.stringToEnum(Tree.Object.Id.Tag, output).? == typ;
 }
@@ -739,7 +739,7 @@ pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
                 extras.assertLog(std.mem.endsWith(u8, label2, "^{}"), "{s}", .{label2});
                 std.debug.assert(std.mem.eql(u8, label, extras.trimSuffixEnsure(label2, "^{}").?));
                 // extras.assertLog(try isType(alloc, dir, id2, .commit), id2); // linux kernel has a single tag that points at a tree
-                if (!(try isType(alloc, dir, id2, .commit)).?) continue;
+                if (!try isType(alloc, dir, id2, .commit)) continue;
 
                 try list.append(Ref{
                     .label = label,
