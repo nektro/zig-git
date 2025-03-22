@@ -74,12 +74,12 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !?CommitId {
                 error.FileNotFound => break :blk,
                 else => |e| return e,
             };
-            var iter = std.mem.split(u8, pckedrfs, "\n");
+            var iter = std.mem.splitScalar(u8, pckedrfs, '\n');
             while (iter.next()) |line| {
                 if (std.mem.startsWith(u8, line, "#")) continue;
                 if (std.mem.startsWith(u8, line, "^")) continue;
                 if (line.len == 0) continue;
-                var jter = std.mem.split(u8, line, " ");
+                var jter = std.mem.splitScalar(u8, line, ' ');
                 const objid = jter.next().?;
                 const ref = jter.next().?;
                 std.debug.assert(jter.next() == null);
@@ -193,7 +193,7 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
-    var iter = std.mem.split(u8, commitfile, "\n");
+    var iter = std.mem.splitScalar(u8, commitfile, '\n');
     var result: Commit = undefined;
     var parents = std.ArrayList(CommitId).init(alloc);
     errdefer parents.deinit();
@@ -221,7 +221,7 @@ fn parseCommitUserAndAt(input: string) !Commit.UserAndAt {
     // first and second part is https://datatracker.ietf.org/doc/html/rfc5322#section-3.4
     // third part is unix epoch timestamp
     // fourth part is TZ
-    var maybe_bad_parser = std.mem.splitBackwards(u8, input, " ");
+    var maybe_bad_parser = std.mem.splitBackwardsScalar(u8, input, ' ');
     const tz_part = maybe_bad_parser.next() orelse return error.BadCommitTz;
     const time_part = maybe_bad_parser.next() orelse return error.BadCommitTime;
     const email_part = maybe_bad_parser.next() orelse return error.BadCommitEmail;
@@ -258,7 +258,7 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
-    var iter = std.mem.split(u8, treefile, "\n");
+    var iter = std.mem.splitScalar(u8, treefile, '\n');
     var children = std.ArrayList(Tree.Object).init(alloc);
     errdefer children.deinit();
 
@@ -267,7 +267,7 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
             std.debug.assert(iter.peek() == null);
             break;
         }
-        var jter = std.mem.split(u8, line, " ");
+        var jter = std.mem.splitScalar(u8, line, ' ');
         const mode = jter.next().?;
         const otype = std.meta.stringToEnum(Tree.Object.Id.Tag, jter.next().?).?;
         const id_and_name = jter.next().?;
@@ -431,7 +431,7 @@ pub fn parseTreeDiffMeta(input: string) !TreeDiffMeta {
     defer t.end();
 
     var result = std.mem.zeroes(TreeDiffMeta);
-    var lineiter = std.mem.split(u8, input, "\n");
+    var lineiter = std.mem.splitScalar(u8, input, '\n');
 
     while (lineiter.next()) |lin| {
         if (lin.len == 0) break;
@@ -504,7 +504,7 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
-    var lineiter = std.mem.split(u8, input, "\n");
+    var lineiter = std.mem.splitScalar(u8, input, '\n');
     var overview = std.ArrayList(TreeDiff.StateLine).init(alloc);
     var diffs = std.ArrayList(TreeDiff.Diff).init(alloc);
 
@@ -513,14 +513,14 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
         std.debug.assert(lin[0] == ':');
 
         // :100644 100644 c06b41d04c381f1841d445c0072219d9a7f57e17 e8f91cf7dd413ac65a362b0a170951033dba4762 M     notes/all_packages.txt
-        var jter = std.mem.tokenize(u8, lin[1..], " ");
+        var jter = std.mem.tokenizeScalar(u8, lin[1..], ' ');
         const before_mode = try parseTreeMode(jter.next().?);
         const after_mode = try parseTreeMode(jter.next().?);
 
         const before_tree = ensureObjId(TreeId, jter.next().?);
         const after_tree = ensureObjId(TreeId, jter.next().?);
 
-        var kter = std.mem.split(u8, jter.next().?, "\t"); // why is there a tab here git. why?
+        var kter = std.mem.splitScalar(u8, jter.next().?, '\t'); // why is there a tab here git. why?
         const action_s = kter.next().?;
 
         try overview.append(.{
@@ -681,11 +681,11 @@ pub fn getBranches(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
     });
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     const output = std.mem.trimRight(u8, result.stdout, "\n");
-    var iter = std.mem.split(u8, output, "\n");
+    var iter = std.mem.splitScalar(u8, output, '\n');
     var list = std.ArrayList(Ref).init(alloc);
     errdefer list.deinit();
     while (iter.next()) |line| {
-        var jter = std.mem.split(u8, line, " ");
+        var jter = std.mem.splitScalar(u8, line, ' ');
         try list.append(Ref{
             .commit = ensureObjId(CommitId, jter.next().?),
             .label = extras.trimPrefixEnsure(jter.rest(), "refs/heads/").?,
@@ -712,11 +712,11 @@ pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
     if (result.term == .Exited and result.term.Exited == 1) return &.{}; // show-ref exits 1 when there are no tags
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     const output = std.mem.trimRight(u8, result.stdout, "\n");
-    var iter = std.mem.split(u8, output, "\n");
+    var iter = std.mem.splitScalar(u8, output, '\n');
     var list = std.ArrayList(Ref).init(alloc);
     errdefer list.deinit();
     while (iter.next()) |line| {
-        var jter = std.mem.split(u8, line, " ");
+        var jter = std.mem.splitScalar(u8, line, ' ');
         const id = ensureObjId(CommitId, jter.next().?).id;
         const label = extras.trimPrefixEnsure(jter.rest(), "refs/tags/").?;
         extras.assertLog(!std.mem.endsWith(u8, label, "^{}"), "{s}", .{label});
@@ -733,7 +733,7 @@ pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
             },
             .tag => {
                 const derefline = iter.next().?;
-                var kter = std.mem.split(u8, derefline, " ");
+                var kter = std.mem.splitScalar(u8, derefline, ' ');
                 const id2 = ensureObjId(CommitId, kter.next().?).id;
                 const label2 = extras.trimPrefixEnsure(kter.rest(), "refs/tags/").?;
                 extras.assertLog(std.mem.endsWith(u8, label2, "^{}"), "{s}", .{label2});
