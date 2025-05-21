@@ -98,12 +98,14 @@ test {
     var git_dir = try std.fs.cwd().openDir(".git", .{});
     defer git_dir.close();
     try expect(try git.getObject(alloc, git_dir, "5403fecad0fde9120535321f222a061abc2849d9")).toEqualString(
-        \\100644 blob 8e8d2ceba4b327ce9db93f988492d0e21a461012	.gitattributes
-        \\100644 blob bb2a57bd81d13975f2a74ae5dd0e652de07bb8a7	.gitignore
-        \\100644 blob 37be0c1cfa4f097edbb1fb5c0585cd18cb08df13	LICENSE
-        \\100644 blob b229eadbd5d6655c2dfbaca5a5f68f2f8f3c5454	git.zig
-        \\100644 blob bb3f1c135632cfca760bd84fb18acdab8dae8ec3	zig.mod
-        \\
+        // zig fmt: off
+        "100644 blob 8e8d2ceba4b327ce9db93f988492d0e21a461012\t.gitattributes\n" ++
+        "100644 blob bb2a57bd81d13975f2a74ae5dd0e652de07bb8a7\t.gitignore\n" ++
+        "100644 blob 37be0c1cfa4f097edbb1fb5c0585cd18cb08df13\tLICENSE\n" ++
+        "100644 blob b229eadbd5d6655c2dfbaca5a5f68f2f8f3c5454\tgit.zig\n" ++
+        "100644 blob bb3f1c135632cfca760bd84fb18acdab8dae8ec3\tzig.mod\n" ++
+        ""
+        // zig fmt: on
     );
 }
 
@@ -138,28 +140,31 @@ test {
     var git_dir = try std.fs.cwd().openDir(".git", .{});
     defer git_dir.close();
     try expect(try git.getTreeDiff(alloc, git_dir, .{ .id = "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e" }, .{ .id = "c39f57f6bb01664a7146ddbfc3debe76ec135f44" })).toEqualString(
-        \\:100644 100644 73c7032166db0eb23c4be11a4ff8ff26ec47c582 b229eadbd5d6655c2dfbaca5a5f68f2f8f3c5454 M	git.zig
-        \\
-        \\diff --git a/git.zig b/git.zig
-        \\index 73c7032..b229ead 100644
-        \\--- a/git.zig
-        \\+++ b/git.zig
-        \\@@ -251,10 +251,10 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
-        \\ fn parseTreeMode(input: string) !Tree.Object.Mode {
-        \\     std.debug.assert(input.len == 6);
-        \\     return .{
-        \\-        .type = @intToEnum(Tree.Object.Type, try std.fmt.parseInt(u16, input[0..3], 10)),
-        \\-        .perm_user = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[3..][0..1], 8)),
-        \\-        .perm_group = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[4..][0..1], 8)),
-        \\-        .perm_other = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[5..][0..1], 8)),
-        \\+        .type = @enumFromInt(try std.fmt.parseInt(u16, input[0..3], 10)),
-        \\+        .perm_user = @bitCast(try std.fmt.parseInt(u3, input[3..][0..1], 8)),
-        \\+        .perm_group = @bitCast(try std.fmt.parseInt(u3, input[4..][0..1], 8)),
-        \\+        .perm_other = @bitCast(try std.fmt.parseInt(u3, input[5..][0..1], 8)),
-        \\     };
-        \\ }
-        \\
-    ++ " ");
+        // zig fmt: off
+        ":100644 100644 73c7032166db0eb23c4be11a4ff8ff26ec47c582 b229eadbd5d6655c2dfbaca5a5f68f2f8f3c5454 M\tgit.zig\n" ++
+        "\n" ++
+        "diff --git a/git.zig b/git.zig\n" ++
+        "index 73c7032..b229ead 100644\n" ++
+        "--- a/git.zig\n" ++
+        "+++ b/git.zig\n" ++
+        "@@ -251,10 +251,10 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {\n" ++
+        " fn parseTreeMode(input: string) !Tree.Object.Mode {\n" ++
+        "     std.debug.assert(input.len == 6);\n" ++
+        "     return .{\n" ++
+        "-        .type = @intToEnum(Tree.Object.Type, try std.fmt.parseInt(u16, input[0..3], 10)),\n" ++
+        "-        .perm_user = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[3..][0..1], 8)),\n" ++
+        "-        .perm_group = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[4..][0..1], 8)),\n" ++
+        "-        .perm_other = @bitCast(Tree.Object.Perm, try std.fmt.parseInt(u3, input[5..][0..1], 8)),\n" ++
+        "+        .type = @enumFromInt(try std.fmt.parseInt(u16, input[0..3], 10)),\n" ++
+        "+        .perm_user = @bitCast(try std.fmt.parseInt(u3, input[3..][0..1], 8)),\n" ++
+        "+        .perm_group = @bitCast(try std.fmt.parseInt(u3, input[4..][0..1], 8)),\n" ++
+        "+        .perm_other = @bitCast(try std.fmt.parseInt(u3, input[5..][0..1], 8)),\n" ++
+        "     };\n" ++
+        " }\n" ++
+        " " ++
+        ""
+        // zig fmt: on
+    );
 }
 
 test {
