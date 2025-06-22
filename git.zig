@@ -517,8 +517,8 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
         const before_mode = try parseTreeMode(jter.next().?);
         const after_mode = try parseTreeMode(jter.next().?);
 
-        const before_tree = ensureObjId(TreeId, jter.next().?);
-        const after_tree = ensureObjId(TreeId, jter.next().?);
+        const before_tree = ensureObjId(BlobId, jter.next().?);
+        const after_tree = ensureObjId(BlobId, jter.next().?);
 
         var kter = std.mem.splitScalar(u8, jter.next().?, '\t'); // why is there a tab here git. why?
         const action_s = kter.next().?;
@@ -526,11 +526,11 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
         try overview.append(.{
             .before = .{
                 .mode = before_mode,
-                .tree = before_tree,
+                .blob = before_tree,
             },
             .after = .{
                 .mode = after_mode,
-                .tree = after_tree,
+                .blob = after_tree,
             },
             .action = std.meta.stringToEnum(TreeDiff.Action, action_s).?,
             .sub_path = kter.rest(),
@@ -642,7 +642,7 @@ pub const TreeDiff = struct {
 
     pub const State = struct {
         mode: Tree.Object.Mode,
-        tree: TreeId,
+        blob: BlobId,
     };
 
     pub const Action = enum {
