@@ -635,8 +635,8 @@ pub const TreeDiff = struct {
         after: State,
         action: Action,
         sub_path: string,
-        adds: u16,
-        subs: u16,
+        adds: u32,
+        subs: u32,
     };
 
     pub const State = struct {
