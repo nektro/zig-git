@@ -270,8 +270,7 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
         var jter = std.mem.splitScalar(u8, line, ' ');
         const mode = jter.next().?;
         const otype = std.meta.stringToEnum(Tree.Object.Id.Tag, jter.next().?).?;
-        const id_and_name = jter.next().?;
-        std.debug.assert(jter.next() == null);
+        const id_and_name = jter.rest();
         const tab_pos = std.mem.indexOfScalar(u8, id_and_name, '\t').?; // why git. why.
         std.debug.assert(tab_pos == 40);
         const id = id_and_name[0..tab_pos][0..40];
