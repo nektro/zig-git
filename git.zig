@@ -213,7 +213,7 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
     return result;
 }
 
-fn parseCommitUserAndAt(input: string) !Commit.UserAndAt {
+fn parseCommitUserAndAt(input: string) !UserAndAt {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
@@ -246,12 +246,12 @@ pub const Commit = struct {
     author: UserAndAt,
     committer: UserAndAt,
     message: string,
+};
 
-    pub const UserAndAt = struct {
-        name: string,
-        email: string,
-        at: time.DateTime,
-    };
+pub const UserAndAt = struct {
+    name: string,
+    email: string,
+    at: time.DateTime,
 };
 
 pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
