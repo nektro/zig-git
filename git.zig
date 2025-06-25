@@ -226,18 +226,31 @@ fn parseCommitUserAndAt(input: string) !UserAndAt {
     const time_part = maybe_bad_parser.next() orelse return error.BadCommitTime;
     const email_part = maybe_bad_parser.next() orelse return error.BadCommitEmail;
     const name_part = maybe_bad_parser.rest();
-    _ = tz_part;
     std.debug.assert(email_part[0] == '<');
     std.debug.assert(email_part[email_part.len - 1] == '>');
     const name = name_part;
     const email = std.mem.trim(u8, email_part, "<>");
-    const at = time.DateTime.initUnix(try std.fmt.parseInt(u64, time_part, 10));
+    const at = parseAt(time_part, tz_part);
 
     return .{
         .name = name,
         .email = email,
         .at = at,
     };
+}
+
+fn parseAt(time_part: string, tz_part: string) time.DateTime {
+    var at = time.DateTime.initUnix(std.fmt.parseInt(u64, time_part, 10) catch unreachable);
+    std.debug.assert(tz_part.len == 5);
+    std.debug.assert(tz_part[0] == '-' or tz_part[0] == '+');
+    const sign: i8 = if (tz_part[0] == '+') 1 else -1;
+    const hrs = std.fmt.parseInt(u8, tz_part[1..][0..2], 10) catch unreachable;
+    const mins = std.fmt.parseInt(u8, tz_part[3..][0..2], 10) catch unreachable;
+    if (sign > 0) at = at.addHours(hrs);
+    if (sign > 0) at = at.addMins(mins);
+    // if (sign < 0) at = at.subHours(hrs); // TODO:
+    // if (sign < 0) at = at.subMins(mins); // TODO:
+    return at;
 }
 
 pub const Commit = struct {
