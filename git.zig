@@ -769,3 +769,109 @@ pub const Ref = struct {
     commit: CommitId,
     tag: ?TagId,
 };
+
+// TODO make this inspect .git/objects
+pub fn getBlame(alloc: std.mem.Allocator, dir: std.fs.Dir, at: CommitId, sub_path: string) !string {
+    const t = tracer.trace(@src(), " {s} -- {s}", .{ at.id, sub_path });
+    defer t.end();
+
+    const result = try std.process.Child.run(.{
+        .allocator = alloc,
+        .cwd_dir = dir,
+        .argv = &.{ "git", "blame", "-p", at.id, "--", sub_path },
+        .max_output_bytes = 1024 * 1024 * 1024,
+    });
+    extras.assertLog(result.term == .Exited and result.term.Exited == 0, "{s}", .{result.stderr});
+    return result.stdout;
+}
+
+pub const BlameIterator = struct {
+    inner: std.mem.SplitIterator(u8, .scalar),
+
+    pub fn init(blamefile: []const u8) BlameIterator {
+        return .{
+            .inner = std.mem.splitScalar(u8, blamefile, '\n'),
+        };
+    }
+
+    /// when line.continuity is >0 then .commit will be the same for the next continuity-1 iterations
+    pub fn next(self: *BlameIterator) ?Line {
+        var result: Line = .{
+            .commit = undefined,
+            .prev_line = 0,
+            .curr_line = 0,
+            .continuity = 0,
+            .author = .{ .name = "", .email = "", .at = .initUnix(0) },
+            .committer = .{ .name = "", .email = "", .at = .initUnix(0) },
+            .summary = "",
+            .previous = null,
+            .filename = "",
+            .line = "",
+        };
+        blk: {
+            var it = std.mem.splitScalar(u8, self.inner.next() orelse return null, ' ');
+            result.commit = ensureObjId(CommitId, extras.nullifyS(it.next().?) orelse return null);
+            result.prev_line = std.fmt.parseInt(u32, it.next().?, 10) catch unreachable;
+            result.curr_line = std.fmt.parseInt(u32, it.next().?, 10) catch unreachable;
+            result.continuity = std.fmt.parseInt(u32, it.next() orelse break :blk, 10) catch unreachable;
+        }
+        while (self.inner.next()) |line| {
+            if (line[0] == '\t') {
+                result.line = line[1..];
+                break;
+            }
+            if (extras.trimPrefixEnsure(line, "author ")) |trimmed| {
+                result.author = .{
+                    .name = trimmed,
+                    .email = extras.trimPrefixEnsure(self.inner.next().?, "author-mail ").?,
+                    .at = parseAt(
+                        extras.trimPrefixEnsure(self.inner.next().?, "author-time ").?,
+                        extras.trimPrefixEnsure(self.inner.next().?, "author-tz ").?,
+                    ),
+                };
+                continue;
+            }
+            if (extras.trimPrefixEnsure(line, "committer ")) |trimmed| {
+                result.committer = .{
+                    .name = trimmed,
+                    .email = extras.trimPrefixEnsure(self.inner.next().?, "committer-mail ").?,
+                    .at = parseAt(
+                        extras.trimPrefixEnsure(self.inner.next().?, "committer-time ").?,
+                        extras.trimPrefixEnsure(self.inner.next().?, "committer-tz ").?,
+                    ),
+                };
+                continue;
+            }
+            if (extras.trimPrefixEnsure(line, "summary ")) |trimmed| {
+                result.summary = trimmed;
+                continue;
+            }
+            if (extras.trimPrefixEnsure(line, "previous ")) |trimmed| {
+                var it = std.mem.splitScalar(u8, trimmed, ' ');
+                result.previous = .{
+                    ensureObjId(CommitId, it.next().?),
+                    it.next().?,
+                };
+                continue;
+            }
+            if (extras.trimPrefixEnsure(line, "filename ")) |trimmed| {
+                result.filename = trimmed;
+                continue;
+            }
+        }
+        return result;
+    }
+
+    pub const Line = struct {
+        commit: CommitId,
+        prev_line: u32,
+        curr_line: u32,
+        continuity: u32,
+        author: UserAndAt,
+        committer: UserAndAt,
+        summary: string,
+        previous: ?struct { CommitId, string },
+        filename: string,
+        line: string,
+    };
+};
