@@ -4,6 +4,7 @@ const top = @This();
 const time = @import("time");
 const extras = @import("extras");
 const tracer = @import("tracer");
+const nfs = @import("nfs");
 
 // 40 is length of sha1 hash
 pub const Id = *const [40]u8;
@@ -55,7 +56,7 @@ pub fn version(alloc: std.mem.Allocator) !string {
 /// Returns the result of running `git rev-parse HEAD`
 /// dir must already be pointing at the .git folder
 // TODO this doesnt handle when there are 0 commits
-pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !?CommitId {
+pub fn getHEAD(alloc: std.mem.Allocator, dir: nfs.Dir) !?CommitId {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
@@ -63,7 +64,10 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: std.fs.Dir) !?CommitId {
 
     if (std.mem.startsWith(u8, h, "ref:")) {
         blk: {
-            const reffile = dir.readFileAlloc(alloc, h[5..], 1024) catch |err| switch (err) {
+            var buf: [std.fs.max_path_bytes]u8 = undefined;
+            @memcpy((&buf).ptr, h[5..]);
+            buf[h[5..].len] = 0;
+            const reffile = dir.readFileAlloc(alloc, buf[0..h[5..].len :0], 1024) catch |err| switch (err) {
                 error.FileNotFound => break :blk,
                 else => |e| return e,
             };
@@ -101,13 +105,13 @@ fn ensureObjId(comptime T: type, input: string) T {
 // TODO make this return a Reader when we implement it ourselves
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
+pub fn getObject(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !string {
     const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
-        .cwd_dir = dir,
+        .cwd_dir = dir.to_std(),
         .argv = &.{ "git", "cat-file", "-p", obj },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
@@ -118,13 +122,13 @@ pub fn getObject(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !string {
 // TODO make this inspect .git/objects manually
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
+pub fn getObjectSize(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !u64 {
     const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
-        .cwd_dir = dir,
+        .cwd_dir = dir.to_std(),
         .argv = &.{ "git", "cat-file", "-s", obj },
     });
     extras.assertLog(result.term == .Exited and result.term.Exited == 0, "{s}", .{result.stderr});
@@ -134,13 +138,13 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !u64 {
 // TODO make this inspect .git manually
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree.Object.Id.Tag) !bool {
+pub fn isType(alloc: std.mem.Allocator, dir: nfs.Dir, maybeobj: Id, typ: Tree.Object.Id.Tag) !bool {
     const t = tracer.trace(@src(), " {s} = {s} ?", .{ maybeobj, @tagName(typ) });
     defer t.end();
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
-        .cwd_dir = dir,
+        .cwd_dir = dir.to_std(),
         .argv = &.{ "git", "cat-file", "-t", maybeobj },
     });
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
@@ -151,13 +155,13 @@ pub fn isType(alloc: std.mem.Allocator, dir: std.fs.Dir, maybeobj: Id, typ: Tree
 // TODO make this inspect .git manually
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getType(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !Tree.Object.Id.Tag {
+pub fn getType(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !Tree.Object.Id.Tag {
     const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
-        .cwd_dir = dir,
+        .cwd_dir = dir.to_std(),
         .argv = &.{ "git", "cat-file", "-t", obj },
     });
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
@@ -169,13 +173,13 @@ pub fn getType(alloc: std.mem.Allocator, dir: std.fs.Dir, obj: Id) !Tree.Object.
 // TODO make a version of this that accepts an array of sub_paths and searches all of them at once, so as to not lose spot in history when searching for many old paths
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn revList(alloc: std.mem.Allocator, dir: std.fs.Dir, comptime count: u31, from: CommitId, sub_path: string) !string {
+pub fn revList(alloc: std.mem.Allocator, dir: nfs.Dir, comptime count: u31, from: CommitId, sub_path: string) !string {
     const t = tracer.trace(@src(), "({d}) {s} -- {s}", .{ count, from.id, sub_path });
     defer t.end();
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
-        .cwd_dir = dir,
+        .cwd_dir = dir.to_std(),
         .argv = &.{
             "git",
             "rev-list",
@@ -412,14 +416,14 @@ pub const Tree = struct {
 
 // TODO make this inspect .git manually
 // TODO make this return a Reader when we implement it ourselves
-pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
+pub fn getTreeDiff(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     if (parentid == null) {
         const result = try std.process.Child.run(.{
             .allocator = alloc,
-            .cwd_dir = dir,
+            .cwd_dir = dir.to_std(),
             // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
             // result of `printf | git hash-object -t tree --stdin`
             .argv = &.{ "git", "diff-tree", "-p", "--raw", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id },
@@ -430,7 +434,7 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: std.fs.Dir, commitid: CommitId
     }
     const result = try std.process.Child.run(.{
         .allocator = alloc,
-        .cwd_dir = dir,
+        .cwd_dir = dir.to_std(),
         .argv = &.{ "git", "diff-tree", "-p", "--raw", parentid.?.id, commitid.id },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
@@ -681,13 +685,13 @@ pub const TreeDiff = struct {
     };
 };
 
-pub fn getBranches(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
+pub fn getBranches(alloc: std.mem.Allocator, dir: nfs.Dir) ![]const Ref {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
-        .cwd_dir = dir,
+        .cwd_dir = dir.to_std(),
         .argv = &.{ "git", "show-ref", "--heads" },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
@@ -707,7 +711,7 @@ pub fn getBranches(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
     return list.toOwnedSlice();
 }
 
-pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
+pub fn getTags(alloc: std.mem.Allocator, dir: nfs.Dir) ![]const Ref {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
@@ -717,7 +721,7 @@ pub fn getTags(alloc: std.mem.Allocator, dir: std.fs.Dir) ![]const Ref {
     // 7dfd3948a9095f0253bfba60fed52895ffbf84bb refs/tags/15.3.2
     const result = try std.process.Child.run(.{
         .allocator = alloc,
-        .cwd_dir = dir,
+        .cwd_dir = dir.to_std(),
         .argv = &.{ "git", "show-ref", "--tags", "--dereference" },
         .max_output_bytes = 1024 * 1024 * 1024,
     });

@@ -2,6 +2,7 @@ const std = @import("std");
 const git = @import("git");
 const extras = @import("extras");
 const expect = @import("expect").expect;
+const nfs = @import("nfs");
 
 test {
     _ = &git.version;
@@ -14,7 +15,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var git_dir = try std.fs.cwd().openDir(".git", .{});
+    const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
     const branch_refs = try git.getBranches(alloc, git_dir);
     const branch_names = try extras.mapBy(alloc, branch_refs, .label);
@@ -25,7 +26,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var git_dir = try std.fs.cwd().openDir(".git", .{});
+    const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
     try expect(try git.getObject(alloc, git_dir, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e")).toEqualString(
         \\tree 5403fecad0fde9120535321f222a061abc2849d9
@@ -42,7 +43,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var git_dir = try std.fs.cwd().openDir(".git", .{});
+    const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
     try expect(try git.getObjectSize(alloc, git_dir, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e")).toEqual(229);
     try expect(try git.getObjectSize(alloc, git_dir, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e")).toEqual(45 + 47 + 55 + 58 + 0 + 18 + 6);
@@ -52,7 +53,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var git_dir = try std.fs.cwd().openDir(".git", .{});
+    const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
     try expect(try git.isType(alloc, git_dir, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e", .blob)).toEqual(false);
     try expect(try git.isType(alloc, git_dir, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e", .tree)).toEqual(false);
@@ -64,7 +65,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var git_dir = try std.fs.cwd().openDir(".git", .{});
+    const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
     try expect(try git.getType(alloc, git_dir, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e")).toEqual(.commit);
 }
@@ -73,7 +74,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var git_dir = try std.fs.cwd().openDir(".git", .{});
+    const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
     const c = try git.parseCommit(alloc, try git.getObject(alloc, git_dir, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e"));
     try expect(c.tree.id).toEqualString("5403fecad0fde9120535321f222a061abc2849d9");
@@ -95,7 +96,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var git_dir = try std.fs.cwd().openDir(".git", .{});
+    const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
     try expect(try git.getObject(alloc, git_dir, "5403fecad0fde9120535321f222a061abc2849d9")).toEqualString(
         // zig fmt: off
@@ -113,7 +114,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var git_dir = try std.fs.cwd().openDir(".git", .{});
+    const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
     const t = try git.parseTree(alloc, try git.getObject(alloc, git_dir, "5403fecad0fde9120535321f222a061abc2849d9"));
     // TODO: test fields when we upgrade to 0.14 and have decl literals
@@ -137,7 +138,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var git_dir = try std.fs.cwd().openDir(".git", .{});
+    const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
     try expect(try git.getTreeDiff(alloc, git_dir, .{ .id = "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e" }, .{ .id = "c39f57f6bb01664a7146ddbfc3debe76ec135f44" })).toEqualString(
         // zig fmt: off
@@ -171,7 +172,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var git_dir = try std.fs.cwd().openDir(".git", .{});
+    const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
     const t = try git.parseTreeDiffMeta(try git.getTreeDiff(alloc, git_dir, .{ .id = "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e" }, .{ .id = "c39f57f6bb01664a7146ddbfc3debe76ec135f44" }));
     try expect(t.files_changed).toEqual(1);
@@ -183,7 +184,7 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var git_dir = try std.fs.cwd().openDir(".git", .{});
+    const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
     const t = try git.parseTreeDiff(alloc, try git.getTreeDiff(alloc, git_dir, .{ .id = "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e" }, .{ .id = "c39f57f6bb01664a7146ddbfc3debe76ec135f44" }));
     _ = t; // TODO: test fields when we upgrade to 0.14 and have decl literals
