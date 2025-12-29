@@ -96,7 +96,7 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: nfs.Dir) !?CommitId {
     return ensureObjId(CommitId, h);
 }
 
-fn ensureObjId(comptime T: type, input: string) T {
+pub fn ensureObjId(comptime T: type, input: string) T {
     extras.assertLog(input.len == 40, "ensureObjId: {s}", .{input});
     return .{ .id = input[0..40] };
 }
