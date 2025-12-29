@@ -775,13 +775,13 @@ pub const Ref = struct {
 };
 
 // TODO make this inspect .git/objects
-pub fn getBlame(alloc: std.mem.Allocator, dir: std.fs.Dir, at: CommitId, sub_path: string) !string {
+pub fn getBlame(alloc: std.mem.Allocator, dir: nfs.Dir, at: CommitId, sub_path: string) !string {
     const t = tracer.trace(@src(), " {s} -- {s}", .{ at.id, sub_path });
     defer t.end();
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
-        .cwd_dir = dir,
+        .cwd_dir = dir.to_std(),
         .argv = &.{ "git", "blame", "-p", at.id, "--", sub_path },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
