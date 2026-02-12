@@ -132,7 +132,7 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !u64 {
         .argv = &.{ "git", "cat-file", "-s", obj },
     });
     extras.assertLog(result.term == .Exited and result.term.Exited == 0, "{s}", .{result.stderr});
-    return try std.fmt.parseInt(u64, std.mem.trimRight(u8, result.stdout, "\n"), 10);
+    return try extras.parseDigits(u64, std.mem.trimRight(u8, result.stdout, "\n"), 10);
 }
 
 // TODO make this inspect .git manually
@@ -244,12 +244,12 @@ fn parseCommitUserAndAt(input: string) !UserAndAt {
 }
 
 fn parseAt(time_part: string, tz_part: string) time.DateTime {
-    var at = time.DateTime.initUnix(std.fmt.parseInt(u64, time_part, 10) catch unreachable);
+    var at = time.DateTime.initUnix(extras.parseDigits(u64, time_part, 10) catch unreachable);
     std.debug.assert(tz_part.len == 5);
     std.debug.assert(tz_part[0] == '-' or tz_part[0] == '+');
     const sign: i8 = if (tz_part[0] == '+') 1 else -1;
-    const hrs = std.fmt.parseInt(u8, tz_part[1..][0..2], 10) catch unreachable;
-    const mins = std.fmt.parseInt(u8, tz_part[3..][0..2], 10) catch unreachable;
+    const hrs = extras.parseDigits(u8, tz_part[1..][0..2], 10) catch unreachable;
+    const mins = extras.parseDigits(u8, tz_part[3..][0..2], 10) catch unreachable;
     if (sign > 0) at = at.addHours(hrs);
     if (sign > 0) at = at.addMins(mins);
     // if (sign < 0) at = at.subHours(hrs); // TODO:
@@ -314,10 +314,10 @@ fn parseTreeMode(input: string) !Tree.Object.Mode {
 
     std.debug.assert(input.len == 6);
     return .{
-        .type = @enumFromInt(try std.fmt.parseInt(u16, input[0..3], 10)),
-        .perm_user = @bitCast(try std.fmt.parseInt(u3, input[3..][0..1], 8)),
-        .perm_group = @bitCast(try std.fmt.parseInt(u3, input[4..][0..1], 8)),
-        .perm_other = @bitCast(try std.fmt.parseInt(u3, input[5..][0..1], 8)),
+        .type = @enumFromInt(try extras.parseDigits(u16, input[0..3], 10)),
+        .perm_user = @bitCast(try extras.parseDigits(u3, input[3..][0..1], 8)),
+        .perm_group = @bitCast(try extras.parseDigits(u3, input[4..][0..1], 8)),
+        .perm_other = @bitCast(try extras.parseDigits(u3, input[5..][0..1], 8)),
     };
 }
 
@@ -815,9 +815,9 @@ pub const BlameIterator = struct {
         blk: {
             var it = std.mem.splitScalar(u8, self.inner.next() orelse return null, ' ');
             result.commit = ensureObjId(CommitId, extras.nullifyS(it.next().?) orelse return null);
-            result.prev_line = std.fmt.parseInt(u32, it.next().?, 10) catch unreachable;
-            result.curr_line = std.fmt.parseInt(u32, it.next().?, 10) catch unreachable;
-            result.continuity = std.fmt.parseInt(u32, it.next() orelse break :blk, 10) catch unreachable;
+            result.prev_line = extras.parseDigits(u32, it.next().?, 10) catch unreachable;
+            result.curr_line = extras.parseDigits(u32, it.next().?, 10) catch unreachable;
+            result.continuity = extras.parseDigits(u32, it.next() orelse break :blk, 10) catch unreachable;
         }
         while (self.inner.next()) |line| {
             if (line[0] == '\t') {
