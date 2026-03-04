@@ -68,14 +68,14 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: nfs.Dir) !?CommitId {
             @memcpy((&buf).ptr, h[5..]);
             buf[h[5..].len] = 0;
             const reffile = dir.readFileAlloc(alloc, buf[0..h[5..].len :0], 1024) catch |err| switch (err) {
-                error.FileNotFound => break :blk,
+                error.ENOENT => break :blk,
                 else => |e| return e,
             };
             return ensureObjId(CommitId, std.mem.trimRight(u8, reffile, "\n"));
         }
         blk: {
             const pckedrfs = dir.readFileAlloc(alloc, "packed-refs", 1024 * 1024 * 1024) catch |err| switch (err) {
-                error.FileNotFound => break :blk,
+                error.ENOENT => break :blk,
                 else => |e| return e,
             };
             var iter = std.mem.splitScalar(u8, pckedrfs, '\n');
