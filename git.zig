@@ -244,16 +244,18 @@ fn parseCommitUserAndAt(input: string) !UserAndAt {
 }
 
 fn parseAt(time_part: string, tz_part: string) time.DateTime {
-    var at = time.DateTime.initUnix(extras.parseDigits(u64, time_part, 10) catch unreachable);
+    const at = time.DateTime.initUnix(extras.parseDigits(u64, time_part, 10) catch unreachable);
     std.debug.assert(tz_part.len == 5);
     std.debug.assert(tz_part[0] == '-' or tz_part[0] == '+');
-    const sign: i8 = if (tz_part[0] == '+') 1 else -1;
-    const hrs = extras.parseDigits(u8, tz_part[1..][0..2], 10) catch unreachable;
-    const mins = extras.parseDigits(u8, tz_part[3..][0..2], 10) catch unreachable;
-    if (sign > 0) at = at.addHours(hrs);
-    if (sign > 0) at = at.addMins(mins);
+    // const sign: i8 = if (tz_part[0] == '+') 1 else -1;
+    // const hrs = extras.parseDigits(u8, tz_part[1..][0..2], 10) catch unreachable;
+    // const mins = extras.parseDigits(u8, tz_part[3..][0..2], 10) catch unreachable;
+    // if (sign > 0) at = at.addHours(hrs);
+    // if (sign > 0) at = at.addMins(mins);
+    // at.offset += (hrs * 60) + mins;
     // if (sign < 0) at = at.subHours(hrs); // TODO:
     // if (sign < 0) at = at.subMins(mins); // TODO:
+    // at.offset -= (hrs * 60) + mins;
     return at;
 }
 
