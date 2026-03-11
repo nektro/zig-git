@@ -444,6 +444,34 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, p
     return std.mem.trim(u8, result.stdout, "\n");
 }
 
+// TODO make this inspect .git manually
+// TODO make this return a Reader when we implement it ourselves
+pub fn getTreeDiffPath(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId, path: []const u8) !string {
+    const t = tracer.trace(@src(), "", .{});
+    defer t.end();
+
+    if (parentid == null) {
+        const result = try std.process.Child.run(.{
+            .allocator = alloc,
+            .cwd_dir = dir.to_std(),
+            // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
+            // result of `printf | git hash-object -t tree --stdin`
+            .argv = &.{ "git", "diff-tree", "-p", "--raw", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id, "--", path },
+            .max_output_bytes = 1024 * 1024 * 1024,
+        });
+        std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+        return std.mem.trim(u8, result.stdout, "\n");
+    }
+    const result = try std.process.Child.run(.{
+        .allocator = alloc,
+        .cwd_dir = dir.to_std(),
+        .argv = &.{ "git", "diff-tree", "-p", "--raw", parentid.?.id, commitid.id, "--", path },
+        .max_output_bytes = 1024 * 1024 * 1024,
+    });
+    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    return std.mem.trim(u8, result.stdout, "\n");
+}
+
 pub fn parseTreeDiffMeta(input: string) !TreeDiffMeta {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
