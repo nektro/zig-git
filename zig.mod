@@ -1,7 +1,7 @@
 id: 0k64oe2nuzvjgz226ufvimjhialghxdgmlzusonbma31flnd
 name: git
 main: git.zig
-license: MIT
+license: MPL-2.0
 description: Inspect into the depths of your .git folder purely from Zig
 dependencies:
   - src: git https://github.com/nektro/zig-time
