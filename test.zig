@@ -145,7 +145,7 @@ test {
         ":100644 100644 73c7032166db0eb23c4be11a4ff8ff26ec47c582 b229eadbd5d6655c2dfbaca5a5f68f2f8f3c5454 M\tgit.zig\n" ++
         "\n" ++
         "diff --git a/git.zig b/git.zig\n" ++
-        "index 73c7032..b229ead 100644\n" ++
+        "index 73c7032166db0eb23c4be11a4ff8ff26ec47c582..b229eadbd5d6655c2dfbaca5a5f68f2f8f3c5454 100644\n" ++
         "--- a/git.zig\n" ++
         "+++ b/git.zig\n" ++
         "@@ -251,10 +251,10 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {\n" ++
@@ -249,4 +249,10 @@ test {
     defer arena.deinit();
     const alloc = arena.allocator();
     _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-1f7390f3999e80f775dbc0e62f1dcb071c3bed77")); // zig
+}
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-a0482e3446cea426bf16571e0000423ed5b25af0")); // linux
 }

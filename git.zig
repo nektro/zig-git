@@ -6,8 +6,7 @@ const extras = @import("extras");
 const tracer = @import("tracer");
 const nfs = @import("nfs");
 
-// 40 is length of sha1 hash
-pub const Id = *const [40]u8;
+pub const Id = []const u8;
 
 pub const TreeId = struct {
     id: Id,
@@ -96,9 +95,10 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: nfs.Dir) !?CommitId {
     return ensureObjId(CommitId, h);
 }
 
+// 40 is length of sha1 hash
 pub fn ensureObjId(comptime T: type, input: string) T {
     extras.assertLog(input.len == 40, "ensureObjId: {s}", .{input});
-    return .{ .id = input[0..40] };
+    return .{ .id = input };
 }
 
 // TODO make this inspect .git/objects
@@ -450,7 +450,7 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, p
             .cwd_dir = dir.to_std(),
             // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
             // result of `printf | git hash-object -t tree --stdin`
-            .argv = &.{ "git", "diff-tree", "-p", "--raw", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id },
+            .argv = &.{ "git", "diff-tree", "-p", "--raw", "--full-index", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id },
             .max_output_bytes = 1024 * 1024 * 1024,
         });
         std.debug.assert(result.term == .Exited and result.term.Exited == 0);
@@ -459,7 +459,7 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, p
     const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "diff-tree", "-p", "--raw", parentid.?.id, commitid.id },
+        .argv = &.{ "git", "diff-tree", "-p", "--raw", "--full-index", parentid.?.id, commitid.id },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
@@ -478,7 +478,7 @@ pub fn getTreeDiffPath(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitI
             .cwd_dir = dir.to_std(),
             // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
             // result of `printf | git hash-object -t tree --stdin`
-            .argv = &.{ "git", "diff-tree", "-p", "--raw", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id, "--", path },
+            .argv = &.{ "git", "diff-tree", "-p", "--raw", "--full-index", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id, "--", path },
             .max_output_bytes = 1024 * 1024 * 1024,
         });
         std.debug.assert(result.term == .Exited and result.term.Exited == 0);
@@ -487,7 +487,7 @@ pub fn getTreeDiffPath(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitI
     const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "diff-tree", "-p", "--raw", parentid.?.id, commitid.id, "--", path },
+        .argv = &.{ "git", "diff-tree", "-p", "--raw", "--full-index", parentid.?.id, commitid.id, "--", path },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
@@ -602,21 +602,8 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             },
             .action = std.meta.stringToEnum(TreeDiff.Action, action_s).?,
             .sub_path = kter.rest(),
-            .adds = 0,
-            .subs = 0,
         });
     }
-
-    const S = struct {
-        fn eql(comptime a: u8) fn (u8) bool {
-            const SS = struct {
-                fn actual(b: u8) bool {
-                    return a == b;
-                }
-            };
-            return SS.actual;
-        }
-    };
 
     // diff --git a/notes/all_packages.txt b/notes/all_packages.txt
     // index c06b41d..e8f91cf 100644
@@ -630,10 +617,17 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
     blk: while (true) {
         const first_line = lineiter.next().?;
         std.debug.assert(std.mem.startsWith(u8, first_line, "diff --git"));
-        const i = diffs.items.len;
-        try diffs.append(.{ .before_path = overview.items[i].sub_path, .after_path = overview.items[i].sub_path, .content = "" });
-        if (extras.matchesAll(u8, overview.items[i].before.blob.id, S.eql('0'))) diffs.items[i].before_path = "/dev/null";
-        if (extras.matchesAll(u8, overview.items[i].after.blob.id, S.eql('0'))) diffs.items[i].after_path = "/dev/null";
+        var i = diffs.items.len;
+        for (overview.items[0..i]) |o| i -= @intFromBool(o.action == .T);
+        try diffs.append(.{
+            .index = .{ "", "" },
+            .before_path = overview.items[i].sub_path,
+            .after_path = overview.items[i].sub_path,
+            .subs = 0,
+            .adds = 0,
+            .content = "",
+        });
+        const diff = &diffs.items[diffs.items.len - 1];
 
         while (true) {
             if (lineiter.index.? >= input.len) {
@@ -641,6 +635,13 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             }
             if (lineiter.peek()) |lin| {
                 if (std.mem.startsWith(u8, lin, "index")) {
+                    const index = lin[6..];
+                    var iiter = std.mem.splitSequence(u8, index, "..");
+                    diff.index[0] = iiter.next().?;
+                    diff.index[1] = iiter.next().?;
+                    std.debug.assert(iiter.next() == null);
+                    if (std.mem.indexOfScalar(u8, diff.index[1], ' ')) |j| diff.index[1] = diff.index[1][0..j];
+
                     lineiter.index.? += lin.len + 1;
                     break;
                 }
@@ -676,10 +677,12 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             }
             if (lineiter.peek()) |lin| {
                 if (std.mem.startsWith(u8, lin, "--- ")) {
+                    diff.before_path = extras.trimPrefix(lin[4..], "a/");
                     lineiter.index.? += lin.len + 1;
                     continue;
                 }
                 if (std.mem.startsWith(u8, lin, "+++ ")) {
+                    diff.after_path = extras.trimPrefix(lin[4..], "b/");
                     lineiter.index.? += lin.len + 1;
                     continue;
                 }
@@ -701,7 +704,7 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             }
         }
         if (lineiter.index.? >= input.len) {
-            diffs.items[diffs.items.len - 1].content = input[content_start..];
+            diff.content = input[content_start..];
             break :blk;
         }
 
@@ -709,13 +712,19 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             if (lineiter.peek()) |lin| {
                 if (std.mem.startsWith(u8, lin, "diff --git")) {
                     const content_end = lineiter.index.? - 1;
-                    diffs.items[diffs.items.len - 1].content = input[content_start..content_end];
+                    diff.content = input[content_start..content_end];
                     continue :blk;
+                }
+                if (lin[0] == '-') {
+                    diff.subs += 1;
+                }
+                if (lin[0] == '+') {
+                    diff.adds += 1;
                 }
                 lineiter.index.? += lin.len + 1;
 
                 if (lineiter.index.? >= input.len) {
-                    diffs.items[diffs.items.len - 1].content = input[content_start..];
+                    diff.content = input[content_start..];
                     break :blk;
                 }
             }
@@ -737,8 +746,6 @@ pub const TreeDiff = struct {
         after: State,
         action: Action,
         sub_path: string,
-        adds: u32,
-        subs: u32,
     };
 
     pub const State = struct {
@@ -764,8 +771,11 @@ pub const TreeDiff = struct {
     };
 
     pub const Diff = struct {
+        index: [2][]const u8,
         before_path: string,
         after_path: string,
+        adds: u32,
+        subs: u32,
         content: string,
     };
 };

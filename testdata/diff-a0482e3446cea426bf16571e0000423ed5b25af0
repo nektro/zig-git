@@ -1,0 +1,208 @@
+:100644 100644 12a0614b9fd4983deffe5d6a7cfa06ba8d92a516 918a2caa070ebc681a9525f0518afffcf10f5ae3 M	tools/testing/selftests/vDSO/Makefile
+:100644 100644 722260f9756198956f0dfccced907284b6851e76 5fdd0f36233742bc47ae79f23d2cfae5a0f56dee M	tools/testing/selftests/vDSO/vdso_config.h
+:100644 120000 9ce795b806f0992b83cef78c7e16fac0e54750da 4d3d96f1e440c965474681a6f35375a60b3921be T	tools/testing/selftests/vDSO/vdso_standalone_test_x86.c
+:100644 100644 8757f738b0b1a76a48c83c5e5df79925a30c1bc7 0aad682b12c8836efabb49a65a47cf87466891a3 M	tools/testing/selftests/vDSO/vdso_test_chacha.c
+:100644 100644 38d46a8bf7cba7a9b4a9b13b5eb17aa207972bd0 b5d5f59f725a703c357dfca91bfe170aaaeb42fa M	tools/testing/selftests/vDSO/vdso_test_clock_getres.c
+:100644 100644 5fb97ad67eeaf17b6cfa4f82783c57894f03e5c5 da651cf53c6ca4242085de109c7fc57bd807297c M	tools/testing/selftests/vDSO/vdso_test_correctness.c
+:100644 100644 95057f7567db22226d9cb09a667a56e387a33a46 dd1132508a0db29a32ec977b30f64b20aa43e03d M	tools/testing/selftests/vDSO/vdso_test_getrandom.c
+
+diff --git a/tools/testing/selftests/vDSO/Makefile b/tools/testing/selftests/vDSO/Makefile
+index 12a0614b9fd4..918a2caa070e 100644
+--- a/tools/testing/selftests/vDSO/Makefile
++++ b/tools/testing/selftests/vDSO/Makefile
+@@ -12,7 +12,7 @@ TEST_GEN_PROGS += vdso_test_correctness
+ TEST_GEN_PROGS += vdso_test_getrandom
+ TEST_GEN_PROGS += vdso_test_chacha
+ 
+-CFLAGS := -std=gnu99 -O2
++CFLAGS := -std=gnu99 -O2 -Wall -Wstrict-prototypes
+ 
+ ifeq ($(CONFIG_X86_32),y)
+ LDLIBS += -lgcc_s
+diff --git a/tools/testing/selftests/vDSO/vdso_config.h b/tools/testing/selftests/vDSO/vdso_config.h
+index 722260f97561..5fdd0f362337 100644
+--- a/tools/testing/selftests/vDSO/vdso_config.h
++++ b/tools/testing/selftests/vDSO/vdso_config.h
+@@ -58,6 +58,7 @@
+ #define VDSO_NAMES		1
+ #endif
+ 
++__attribute__((unused))
+ static const char *versions[7] = {
+ 	"LINUX_2.6",
+ 	"LINUX_2.6.15",
+@@ -68,6 +69,7 @@ static const char *versions[7] = {
+ 	"LINUX_5.10"
+ };
+ 
++__attribute__((unused))
+ static const char *names[2][7] = {
+ 	{
+ 		"__kernel_gettimeofday",
+diff --git a/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c b/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c
+deleted file mode 100644
+index 9ce795b806f0..000000000000
+--- a/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c
++++ /dev/null
+@@ -1,58 +0,0 @@
+-// SPDX-License-Identifier: GPL-2.0-only
+-/*
+- * vdso_test_gettimeofday.c: Sample code to test parse_vdso.c and
+- *                           vDSO gettimeofday()
+- * Copyright (c) 2014 Andy Lutomirski
+- *
+- * Compile with:
+- * gcc -std=gnu99 vdso_test_gettimeofday.c parse_vdso_gettimeofday.c
+- *
+- * Tested on x86, 32-bit and 64-bit.  It may work on other architectures, too.
+- */
+-
+-#include <stdio.h>
+-#ifndef NOLIBC
+-#include <sys/auxv.h>
+-#include <sys/time.h>
+-#endif
+-
+-#include "../kselftest.h"
+-#include "parse_vdso.h"
+-#include "vdso_config.h"
+-#include "vdso_call.h"
+-
+-int main(int argc, char **argv)
+-{
+-	const char *version = versions[VDSO_VERSION];
+-	const char **name = (const char **)&names[VDSO_NAMES];
+-
+-	unsigned long sysinfo_ehdr = getauxval(AT_SYSINFO_EHDR);
+-	if (!sysinfo_ehdr) {
+-		printf("AT_SYSINFO_EHDR is not present!\n");
+-		return KSFT_SKIP;
+-	}
+-
+-	vdso_init_from_sysinfo_ehdr(getauxval(AT_SYSINFO_EHDR));
+-
+-	/* Find gettimeofday. */
+-	typedef long (*gtod_t)(struct timeval *tv, struct timezone *tz);
+-	gtod_t gtod = (gtod_t)vdso_sym(version, name[0]);
+-
+-	if (!gtod) {
+-		printf("Could not find %s\n", name[0]);
+-		return KSFT_SKIP;
+-	}
+-
+-	struct timeval tv;
+-	long ret = VDSO_CALL(gtod, 2, &tv, 0);
+-
+-	if (ret == 0) {
+-		printf("The time is %lld.%06lld\n",
+-		       (long long)tv.tv_sec, (long long)tv.tv_usec);
+-	} else {
+-		printf("%s failed\n", name[0]);
+-		return KSFT_FAIL;
+-	}
+-
+-	return 0;
+-}
+diff --git a/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c b/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c
+new file mode 120000
+index 000000000000..4d3d96f1e440
+--- /dev/null
++++ b/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c
+@@ -0,0 +1 @@
++vdso_test_gettimeofday.c
+\ No newline at end of file
+diff --git a/tools/testing/selftests/vDSO/vdso_test_chacha.c b/tools/testing/selftests/vDSO/vdso_test_chacha.c
+index 8757f738b0b1..0aad682b12c8 100644
+--- a/tools/testing/selftests/vDSO/vdso_test_chacha.c
++++ b/tools/testing/selftests/vDSO/vdso_test_chacha.c
+@@ -76,7 +76,8 @@ static void reference_chacha20_blocks(uint8_t *dst_bytes, const uint32_t *key, u
+ 
+ void __weak __arch_chacha20_blocks_nostack(uint8_t *dst_bytes, const uint32_t *key, uint32_t *counter, size_t nblocks)
+ {
+-	ksft_exit_skip("Not implemented on architecture\n");
++	ksft_test_result_skip("Not implemented on architecture\n");
++	ksft_finished();
+ }
+ 
+ int main(int argc, char *argv[])
+diff --git a/tools/testing/selftests/vDSO/vdso_test_clock_getres.c b/tools/testing/selftests/vDSO/vdso_test_clock_getres.c
+index 38d46a8bf7cb..b5d5f59f725a 100644
+--- a/tools/testing/selftests/vDSO/vdso_test_clock_getres.c
++++ b/tools/testing/selftests/vDSO/vdso_test_clock_getres.c
+@@ -13,7 +13,6 @@
+ 
+ #define _GNU_SOURCE
+ #include <elf.h>
+-#include <err.h>
+ #include <fcntl.h>
+ #include <stdint.h>
+ #include <stdio.h>
+diff --git a/tools/testing/selftests/vDSO/vdso_test_correctness.c b/tools/testing/selftests/vDSO/vdso_test_correctness.c
+index 5fb97ad67eea..da651cf53c6c 100644
+--- a/tools/testing/selftests/vDSO/vdso_test_correctness.c
++++ b/tools/testing/selftests/vDSO/vdso_test_correctness.c
+@@ -108,7 +108,7 @@ static void *vsyscall_getcpu(void)
+ }
+ 
+ 
+-static void fill_function_pointers()
++static void fill_function_pointers(void)
+ {
+ 	void *vdso = dlopen("linux-vdso.so.1",
+ 			    RTLD_LAZY | RTLD_LOCAL | RTLD_NOLOAD);
+diff --git a/tools/testing/selftests/vDSO/vdso_test_getrandom.c b/tools/testing/selftests/vDSO/vdso_test_getrandom.c
+index 95057f7567db..dd1132508a0d 100644
+--- a/tools/testing/selftests/vDSO/vdso_test_getrandom.c
++++ b/tools/testing/selftests/vDSO/vdso_test_getrandom.c
+@@ -21,7 +21,6 @@
+ #include <sys/wait.h>
+ #include <sys/types.h>
+ #include <linux/random.h>
+-#include <linux/compiler.h>
+ #include <linux/ptrace.h>
+ 
+ #include "../kselftest.h"
+@@ -101,6 +100,7 @@ static void *vgetrandom_get_state(void)
+ 	return state;
+ }
+ 
++__attribute__((unused)) /* Example for libc implementors */
+ static void vgetrandom_put_state(void *state)
+ {
+ 	if (!state)
+@@ -242,6 +242,7 @@ static void kselftest(void)
+ 	pid_t child;
+ 
+ 	ksft_print_header();
++	vgetrandom_init();
+ 	ksft_set_plan(2);
+ 
+ 	for (size_t i = 0; i < 1000; ++i) {
+@@ -265,7 +266,7 @@ static void kselftest(void)
+ 	}
+ 	for (;;) {
+ 		struct ptrace_syscall_info info = { 0 };
+-		int status, ret;
++		int status;
+ 		ksft_assert(waitpid(child, &status, 0) >= 0);
+ 		if (WIFEXITED(status)) {
+ 			ksft_assert(WEXITSTATUS(status) == 0);
+@@ -295,8 +296,6 @@ static void usage(const char *argv0)
+ 
+ int main(int argc, char *argv[])
+ {
+-	vgetrandom_init();
+-
+ 	if (argc == 1) {
+ 		kselftest();
+ 		return 0;
+@@ -306,6 +305,9 @@ int main(int argc, char *argv[])
+ 		usage(argv[0]);
+ 		return 1;
+ 	}
++
++	vgetrandom_init();
++
+ 	if (!strcmp(argv[1], "bench-single"))
+ 		bench_single();
+ 	else if (!strcmp(argv[1], "bench-multi"))
