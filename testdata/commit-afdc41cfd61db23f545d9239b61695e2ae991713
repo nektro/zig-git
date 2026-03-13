@@ -1,0 +1,6 @@
+tree 75fb7a2a91977f415947e341c052db72ecb269a8
+parent b5cef9e8b48e81fb1f3b56cb752bac95e6a2d44b
+author Michael Ortmann <keine email> 1710995836 +0100
+committer Veikka Tuominen <git@vexu.eu> 1711033730 +0200
+
+std.os.windows: add POLL.IN and POLL.OUT

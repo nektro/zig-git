@@ -245,7 +245,12 @@ fn parseCommitUserAndAt(input: string) !UserAndAt {
     var maybe_bad_parser = std.mem.splitBackwardsScalar(u8, input, ' ');
     const tz_part = maybe_bad_parser.next() orelse return error.BadCommitTz;
     const time_part = maybe_bad_parser.next() orelse return error.BadCommitTime;
-    const email_part = maybe_bad_parser.next() orelse return error.BadCommitEmail;
+    var email_part = maybe_bad_parser.next() orelse return error.BadCommitEmail;
+    while (email_part[0] != '<') {
+        const next_len = maybe_bad_parser.next().?.len;
+        email_part.ptr -= next_len + 1;
+        email_part.len += next_len + 1;
+    }
     const name_part = maybe_bad_parser.rest();
     std.debug.assert(email_part[0] == '<');
     std.debug.assert(email_part[email_part.len - 1] == '>');

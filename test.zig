@@ -242,5 +242,11 @@ test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
+    _ = try git.parseCommit(alloc, @embedFile("./testdata/commit-afdc41cfd61db23f545d9239b61695e2ae991713")); // zig
+}
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
     _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-1f7390f3999e80f775dbc0e62f1dcb071c3bed77")); // zig
 }
