@@ -1,0 +1,96 @@
+:100644 100644 e09b8f18abe0652043301349ece259daec0c6241 8f265f9eb61ae03e0b5ab80545fa1ce9aab961aa M	src/Compilation.zig
+:100644 100644 af972ccb8665085991070de3235a6da537423dc6 81eb1b00428e9e2c3ef5fdf8b532255ed2e66867 M	test/standalone.zig
+:000000 100644 0000000000000000000000000000000000000000 f5e07d8903268bec8527dd555c7c6955af5ff879 A	test/standalone/issue_13970/build.zig
+:000000 100644 0000000000000000000000000000000000000000 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 A	test/standalone/issue_13970/empty.zig
+:000000 100644 0000000000000000000000000000000000000000 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 A	test/standalone/issue_13970/src/empty.zig
+:000000 100644 0000000000000000000000000000000000000000 d71320d46a61a74ccc3e5908ab46c4d0a1fea69a A	test/standalone/issue_13970/src/main.zig
+:000000 100644 0000000000000000000000000000000000000000 4f6037b38dab0c9b800046b0477dc64f3c3b55e8 A	test/standalone/issue_13970/src/package.zig
+:000000 100644 0000000000000000000000000000000000000000 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 A	test/standalone/issue_13970/test_root/empty.zig
+
+diff --git a/src/Compilation.zig b/src/Compilation.zig
+index e09b8f18ab..8f265f9eb6 100644
+--- a/src/Compilation.zig
++++ b/src/Compilation.zig
+@@ -1621,8 +1621,11 @@ pub fn create(gpa: Allocator, options: InitOptions) !*Compilation {
+             const root_pkg = if (options.is_test) root_pkg: {
+                 // TODO: we currently have two packages named 'root' here, which is weird. This
+                 // should be changed as part of the resolution of #12201
+-                const test_pkg = if (options.test_runner_path) |test_runner|
+-                    try Package.create(gpa, "root", null, test_runner)
++                const test_pkg = if (options.test_runner_path) |test_runner| test_pkg: {
++                    const test_dir = std.fs.path.dirname(test_runner);
++                    const basename = std.fs.path.basename(test_runner);
++                    break :test_pkg try Package.create(gpa, "root", test_dir, basename);
++                }
+                 else
+                     try Package.createWithDir(
+                         gpa,
+diff --git a/test/standalone.zig b/test/standalone.zig
+index af972ccb86..81eb1b0042 100644
+--- a/test/standalone.zig
++++ b/test/standalone.zig
+@@ -27,6 +27,7 @@ pub fn addCases(cases: *tests.StandaloneContext) void {
+     cases.add("test/standalone/noreturn_call/inline.zig");
+     cases.add("test/standalone/noreturn_call/as_arg.zig");
+     cases.addBuildFile("test/standalone/test_runner_path/build.zig", .{ .requires_stage2 = true });
++    cases.addBuildFile("test/standalone/issue_13970/build.zig", .{});
+     cases.addBuildFile("test/standalone/main_pkg_path/build.zig", .{});
+     cases.addBuildFile("test/standalone/shared_library/build.zig", .{});
+     cases.addBuildFile("test/standalone/mix_o_files/build.zig", .{});
+diff --git a/test/standalone/issue_13970/build.zig b/test/standalone/issue_13970/build.zig
+new file mode 100644
+index 0000000000..f5e07d8903
+--- /dev/null
++++ b/test/standalone/issue_13970/build.zig
+@@ -0,0 +1,21 @@
++const std = @import("std");
++
++pub fn build(b: *std.Build) void {
++    const test1 = b.addTest(.{
++        .root_source_file = .{ .path = "test_root/empty.zig" },
++    });
++    const test2 = b.addTest(.{
++        .root_source_file = .{ .path = "src/empty.zig" },
++    });
++    const test3 = b.addTest(.{
++        .root_source_file = .{ .path = "empty.zig" },
++    });
++    test1.setTestRunner("src/main.zig");
++    test2.setTestRunner("src/main.zig");
++    test3.setTestRunner("src/main.zig");
++
++    const test_step = b.step("test", "Test package path resolution of custom test runner");
++    test_step.dependOn(&test1.step);
++    test_step.dependOn(&test2.step);
++    test_step.dependOn(&test3.step);
++}
+diff --git a/test/standalone/issue_13970/empty.zig b/test/standalone/issue_13970/empty.zig
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/test/standalone/issue_13970/src/empty.zig b/test/standalone/issue_13970/src/empty.zig
+new file mode 100644
+index 0000000000..e69de29bb2
+diff --git a/test/standalone/issue_13970/src/main.zig b/test/standalone/issue_13970/src/main.zig
+new file mode 100644
+index 0000000000..d71320d46a
+--- /dev/null
++++ b/test/standalone/issue_13970/src/main.zig
+@@ -0,0 +1,8 @@
++const std = @import("std");
++const package = @import("package.zig");
++const root = @import("root");
++const builtin = @import("builtin");
++
++pub fn main() !void {
++    _ = package.decl;
++}
+diff --git a/test/standalone/issue_13970/src/package.zig b/test/standalone/issue_13970/src/package.zig
+new file mode 100644
+index 0000000000..4f6037b38d
+--- /dev/null
++++ b/test/standalone/issue_13970/src/package.zig
+@@ -0,0 +1 @@
++pub const decl = 0;
+diff --git a/test/standalone/issue_13970/test_root/empty.zig b/test/standalone/issue_13970/test_root/empty.zig
+new file mode 100644
+index 0000000000..e69de29bb2

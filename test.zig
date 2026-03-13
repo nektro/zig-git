@@ -189,3 +189,58 @@ test {
     const t = try git.parseTreeDiff(alloc, try git.getTreeDiff(alloc, git_dir, .{ .id = "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e" }, .{ .id = "c39f57f6bb01664a7146ddbfc3debe76ec135f44" }));
     _ = t; // TODO: test fields when we upgrade to 0.14 and have decl literals
 }
+
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-9feb6b667c77c187f547deaf10cd1f04e92fe192")); // magnolia-desktop
+}
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-f2ccd4d1333aad1175550daf616b061388e1864f")); // magnolia-desktop
+}
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-47ed809ce10bdfa99351c72935467c9afae47e36")); // magnolia-desktop
+}
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-15700f9e1c919a3f0c492415d982a09f5e8122cd")); // magnolia-desktop
+}
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-8480815a00f341a9058a26bf86f34368184615d6")); // magnolia-desktop
+}
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-c37d23f45ae6bd0db6b072180d7b84566c7dc8a2")); // zig
+}
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-f58200e3f2967a06f343c9fc9dcae9de18def92a")); // zig
+}
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-d9165aacce3629d503f87cd2c3f612629127641b")); // zig
+}
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-1f7390f3999e80f775dbc0e62f1dcb071c3bed77")); // zig
+}

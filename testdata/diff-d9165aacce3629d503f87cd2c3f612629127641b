@@ -1,0 +1,9 @@
+:100644 100755 220aaf12d9f74e95c2ed898a3046d23bc4792369 220aaf12d9f74e95c2ed898a3046d23bc4792369 M	ci/aarch64-linux-debug.sh
+:100644 100755 69eed679e3c6041d9fff2d591bac7e2fa110debd 69eed679e3c6041d9fff2d591bac7e2fa110debd M	ci/aarch64-linux-release.sh
+
+diff --git a/ci/aarch64-linux-debug.sh b/ci/aarch64-linux-debug.sh
+old mode 100644
+new mode 100755
+diff --git a/ci/aarch64-linux-release.sh b/ci/aarch64-linux-release.sh
+old mode 100644
+new mode 100755

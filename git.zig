@@ -602,6 +602,17 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
         });
     }
 
+    const S = struct {
+        fn eql(comptime a: u8) fn (u8) bool {
+            const SS = struct {
+                fn actual(b: u8) bool {
+                    return a == b;
+                }
+            };
+            return SS.actual;
+        }
+    };
+
     // diff --git a/notes/all_packages.txt b/notes/all_packages.txt
     // index c06b41d..e8f91cf 100644
     // --- a/notes/all_packages.txt
@@ -611,77 +622,99 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
     //  freedesktop/xorg/libxmu
     //  ncompress
     // +freedesktop/xorg/libxpm
-    std.debug.assert(std.mem.startsWith(u8, lineiter.next() orelse return std.mem.zeroes(TreeDiff), "diff --git"));
     blk: while (true) {
-        while (lineiter.next()) |lin| {
-            if (std.mem.startsWith(u8, lin, "index")) break;
-            if (std.mem.startsWith(u8, lin, "new file mode")) continue;
-            if (std.mem.startsWith(u8, lin, "deleted file mode")) continue;
-            if (std.mem.startsWith(u8, lin, "old mode")) continue;
-            if (std.mem.startsWith(u8, lin, "new mode")) continue;
+        const first_line = lineiter.next().?;
+        std.debug.assert(std.mem.startsWith(u8, first_line, "diff --git"));
+        const i = diffs.items.len;
+        try diffs.append(.{ .before_path = overview.items[i].sub_path, .after_path = overview.items[i].sub_path, .content = "" });
+        if (extras.matchesAll(u8, overview.items[i].before.blob.id, S.eql('0'))) diffs.items[i].before_path = "/dev/null";
+        if (extras.matchesAll(u8, overview.items[i].after.blob.id, S.eql('0'))) diffs.items[i].after_path = "/dev/null";
 
-            std.log.err("{s}", .{lin});
-            unreachable;
-        }
-
-        const before_path_raw = lineiter.next() orelse {
-            // empty file diff has nothing after 'index' line and this branch handles when its the last item
-            try diffs.append(.{
-                .before_path = overview.items[diffs.items.len].sub_path,
-                .after_path = overview.items[diffs.items.len].sub_path,
-                .content = "",
-            });
-            break;
-        };
-        if (std.mem.startsWith(u8, before_path_raw, "Binary files")) {
-            try diffs.append(.{
-                .before_path = overview.items[diffs.items.len].sub_path,
-                .after_path = overview.items[diffs.items.len].sub_path,
-                .content = before_path_raw,
-            });
-            _ = lineiter.index orelse break :blk;
-            std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "diff --git"));
-            continue :blk;
-        }
-        if (std.mem.startsWith(u8, before_path_raw, "diff --git")) {
-            // empty file in the middle, no diff
-            try diffs.append(.{
-                .before_path = overview.items[diffs.items.len].sub_path,
-                .after_path = overview.items[diffs.items.len].sub_path,
-                .content = "",
-            });
-            continue :blk;
-        }
-        const before_path = extras.trimPrefixEnsure(before_path_raw, "--- a/") orelse extras.trimPrefixEnsure(before_path_raw, "--- ") orelse @panic(before_path_raw);
-
-        const after_path_raw = lineiter.next().?;
-        const after_path = extras.trimPrefixEnsure(after_path_raw, "+++ b/") orelse extras.trimPrefixEnsure(after_path_raw, "+++ ") orelse @panic(after_path_raw);
-
-        const start_index = lineiter.index.?;
-
-        while (lineiter.next()) |lin| {
-            if (std.mem.startsWith(u8, lin, "diff --git")) {
-                const end_index = lineiter.index.? - lin.len - 2;
-                const content = input[start_index..end_index];
-                overview.items[diffs.items.len].adds = @intCast(std.mem.count(u8, content, "\n+"));
-                overview.items[diffs.items.len].subs = @intCast(std.mem.count(u8, content, "\n-"));
-                try diffs.append(.{
-                    .before_path = before_path,
-                    .after_path = after_path,
-                    .content = content,
-                });
-                continue :blk;
+        while (true) {
+            if (lineiter.index.? >= input.len) {
+                break :blk;
+            }
+            if (lineiter.peek()) |lin| {
+                if (std.mem.startsWith(u8, lin, "index")) {
+                    lineiter.index.? += lin.len + 1;
+                    break;
+                }
+                if (std.mem.startsWith(u8, lin, "new file mode")) {
+                    lineiter.index.? += lin.len + 1;
+                    continue;
+                }
+                if (std.mem.startsWith(u8, lin, "deleted file mode")) {
+                    lineiter.index.? += lin.len + 1;
+                    continue;
+                }
+                if (std.mem.startsWith(u8, lin, "old mode")) {
+                    lineiter.index.? += lin.len + 1;
+                    continue;
+                }
+                if (std.mem.startsWith(u8, lin, "new mode")) {
+                    lineiter.index.? += lin.len + 1;
+                    continue;
+                }
+                if (std.mem.startsWith(u8, lin, "diff --git")) {
+                    continue :blk;
+                }
+                std.log.err("{s}", .{lin});
+                unreachable;
             }
         }
-        const content = input[start_index..];
-        overview.items[diffs.items.len].adds = @intCast(std.mem.count(u8, content, "\n+"));
-        overview.items[diffs.items.len].subs = @intCast(std.mem.count(u8, content, "\n-"));
-        try diffs.append(.{
-            .before_path = before_path,
-            .after_path = after_path,
-            .content = content,
-        });
-        break :blk;
+
+        var content_start: usize = 0;
+
+        while (true) {
+            if (lineiter.index.? >= input.len) {
+                break :blk;
+            }
+            if (lineiter.peek()) |lin| {
+                if (std.mem.startsWith(u8, lin, "--- ")) {
+                    lineiter.index.? += lin.len + 1;
+                    continue;
+                }
+                if (std.mem.startsWith(u8, lin, "+++ ")) {
+                    lineiter.index.? += lin.len + 1;
+                    continue;
+                }
+                if (std.mem.startsWith(u8, lin, "@@ ")) {
+                    content_start = lineiter.index.?;
+                    lineiter.index.? += lin.len + 1;
+                    break;
+                }
+                if (std.mem.startsWith(u8, lin, "Binary files ")) {
+                    content_start = lineiter.index.?;
+                    lineiter.index.? += lin.len + 1;
+                    break;
+                }
+                if (std.mem.startsWith(u8, lin, "diff --git")) {
+                    continue :blk;
+                }
+                std.log.err("{s}", .{lin});
+                unreachable;
+            }
+        }
+        if (lineiter.index.? >= input.len) {
+            diffs.items[diffs.items.len - 1].content = input[content_start..];
+            break :blk;
+        }
+
+        while (true) {
+            if (lineiter.peek()) |lin| {
+                if (std.mem.startsWith(u8, lin, "diff --git")) {
+                    const content_end = lineiter.index.? - 1;
+                    diffs.items[diffs.items.len - 1].content = input[content_start..content_end];
+                    continue :blk;
+                }
+                lineiter.index.? += lin.len + 1;
+
+                if (lineiter.index.? >= input.len) {
+                    diffs.items[diffs.items.len - 1].content = input[content_start..];
+                    break :blk;
+                }
+            }
+        }
     }
 
     return TreeDiff{

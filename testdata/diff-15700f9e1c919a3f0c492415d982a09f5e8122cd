@@ -1,0 +1,5 @@
+:100644 100644 1e5a5a99eb7fe12e6ea2f48fb2ff3e8de186efa0 8aff424ddd2f434448b73c0bf62dca382e783be7 M	test/images/demo-border.png
+
+diff --git a/test/images/demo-border.png b/test/images/demo-border.png
+index 1e5a5a9..8aff424 100644
+Binary files a/test/images/demo-border.png and b/test/images/demo-border.png differ

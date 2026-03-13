@@ -1,0 +1,196 @@
+:100644 100644 d49352c9c20cea1ca91beb90979e8d4a1670a01c 5b519a35eb2ea8842573d82f13ab965ca8724b69 M	README.md
+:100644 100644 b301658a8bea70ef336e7f426c284017b6f48465 9c975af044191b87fcd54769c29bf94a22f9123f M	apps/Calculator/main.zig
+:100644 100644 f6990eea8b8db29a2ab4113d5d3d422454108ec9 90c6e9a60ff739b96f9ba78b65e2c6584cbaa2fe M	apps/ImageViewer/main.zig
+:100644 100644 30850c59cddc295497c3939b6076bb09c8d36de7 cf55d583ce85b9e026f94f6eabcf1490a450c9fb M	build.zig
+:100644 100644 731b5b15f743db7aa587fc5f8b8d98d16df106d8 c2d6942489853658391c971988c85317e0da07d2 M	demos/7guis/1counter.zig
+:100644 100644 c6121d73b6adfe4e03889291ca323d0842187b22 da65c9ce2b7ba832d1b748e2ea0bbb6f363f94f4 M	demos/logl/hello-window.zig
+:100644 100644 49c152d836ca8470b153957ba90a4376aa2bbbf0 13704daad693cc0054559ff70f5f3e242ecad273 M	src/main.zig
+:100644 100644 55ee6c75e23a130d4cca5825925c92438e3c3865 8044e605443388554cecc57cf4fb2b5c4f41987e M	zigmod.lock
+:100644 100644 1ce887547a4c312badf1429dc2afbfb2c5647776 e24cb55669911d7502b4e7e9add98995586834cf M	zigmod.yml
+
+diff --git a/README.md b/README.md
+index d49352c..5b519a3 100644
+--- a/README.md
++++ b/README.md
+@@ -21,7 +21,7 @@ Source-Available, All rights reserved. (c) 2023 Meghan Denny
+ Will likely be MPL-2.0 in the future.
+ 
+ ## Credits
+-- Zig 0.13.0
++- Zig 0.14.1
+ - See [`zigmod.yml`](./zigmod.yml) and [`zigmod.lock`](./zigmod.lock)
+ 
+ ## Building
+diff --git a/apps/Calculator/main.zig b/apps/Calculator/main.zig
+index b301658..9c975af 100644
+--- a/apps/Calculator/main.zig
++++ b/apps/Calculator/main.zig
+@@ -201,7 +201,7 @@ pub const SquareButton = struct {
+ fn onclickNum(comptime n: f64) mag.e.Button.OnClickFn {
+     const S = struct {
+         fn onclick(app: *App, state: ?*anyopaque) u32 {
+-            const b = extras.ptrCast(BadTextbox, state.?);
++            const b: *BadTextbox = @ptrCast(@alignCast(state.?));
+             if (b.active_operator) |_| {
+                 b.active_num = .two;
+ 
+@@ -231,7 +231,7 @@ fn onclickNum(comptime n: f64) mag.e.Button.OnClickFn {
+ }
+ 
+ fn onclickDot(app: *App, state: ?*anyopaque) u32 {
+-    const b = extras.ptrCast(BadTextbox, state.?);
++    const b: *BadTextbox = @ptrCast(@alignCast(state.?));
+     b.dot = 0;
+     b.update(app);
+     return 1;
+@@ -240,7 +240,7 @@ fn onclickDot(app: *App, state: ?*anyopaque) u32 {
+ fn onclickOp(comptime o: BadTextbox.Op) mag.e.Button.OnClickFn {
+     const S = struct {
+         fn onclick(app: *App, state: ?*anyopaque) u32 {
+-            const b = extras.ptrCast(BadTextbox, state.?);
++            const b: *BadTextbox = @ptrCast(@alignCast(state.?));
+             toggleOpButton(app, b, o);
+             b.active_operator = o;
+             b.dot = null;
+@@ -281,7 +281,7 @@ fn toggleOpButtonOnly(app: *const App, op: BadTextbox.Op, to: enum { on, off })
+ }
+ 
+ fn onclickNeg(app: *App, state: ?*anyopaque) u32 {
+-    const b = extras.ptrCast(BadTextbox, state.?);
++    const b: *BadTextbox = @ptrCast(@alignCast(state.?));
+     switch (b.active_num) {
+         .one => b.num1 *= -1,
+         .two => b.num2 *= -1,
+@@ -291,7 +291,7 @@ fn onclickNeg(app: *App, state: ?*anyopaque) u32 {
+ }
+ 
+ fn onclickRoot2(app: *App, state: ?*anyopaque) u32 {
+-    const b = extras.ptrCast(BadTextbox, state.?);
++    const b: *BadTextbox = @ptrCast(@alignCast(state.?));
+     switch (b.active_num) {
+         .one => b.num1 = @sqrt(b.num1),
+         .two => b.num2 = @sqrt(b.num2),
+@@ -301,7 +301,7 @@ fn onclickRoot2(app: *App, state: ?*anyopaque) u32 {
+ }
+ 
+ fn onclickRoot3(app: *App, state: ?*anyopaque) u32 {
+-    const b = extras.ptrCast(BadTextbox, state.?);
++    const b: *BadTextbox = @ptrCast(@alignCast(state.?));
+     switch (b.active_num) {
+         .one => b.num1 = std.math.cbrt(b.num1),
+         .two => b.num2 = std.math.cbrt(b.num2),
+@@ -311,7 +311,7 @@ fn onclickRoot3(app: *App, state: ?*anyopaque) u32 {
+ }
+ 
+ fn onclickEql(app: *App, state: ?*anyopaque) u32 {
+-    const b = extras.ptrCast(BadTextbox, state.?);
++    const b: *BadTextbox = @ptrCast(@alignCast(state.?));
+     if (b.active_num == .one) {
+         return 0;
+     }
+@@ -338,7 +338,7 @@ fn onclickEql(app: *App, state: ?*anyopaque) u32 {
+ }
+ 
+ fn onclickClear(app: *App, state: ?*anyopaque) u32 {
+-    const b = extras.ptrCast(BadTextbox, state.?);
++    const b: *BadTextbox = @ptrCast(@alignCast(state.?));
+     b.active_num = .one;
+     b.num1 = 0;
+     b.num2 = 0;
+diff --git a/apps/ImageViewer/main.zig b/apps/ImageViewer/main.zig
+index f6990ee..90c6e9a 100644
+--- a/apps/ImageViewer/main.zig
++++ b/apps/ImageViewer/main.zig
+@@ -16,7 +16,7 @@ pub fn main() !void {
+ 
+     extras.assertLog(std.os.argv.len == 2, "must pass a file to open as an argument", .{});
+     const file_name = std.mem.sliceTo(std.os.argv[1], 0);
+-    extras.assertLog(file_name.len <= std.fs.MAX_PATH_BYTES, "file argument longer than MAX_PATH_BYTES", .{});
++    extras.assertLog(file_name.len <= std.fs.max_path_bytes, "file argument longer than max_path_bytes", .{});
+ 
+     var app = try App.init(alloc, 300, 200, try std.fmt.allocPrintZ(alloc, "{s} — {s}", .{ file_name, build_options.name }));
+     defer app.deinit();
+diff --git a/build.zig b/build.zig
+index 30850c5..cf55d58 100644
+--- a/build.zig
++++ b/build.zig
+@@ -3,6 +3,8 @@ const string = []const u8;
+ const deps = @import("./deps.zig");
+ 
+ pub fn build(b: *std.Build) void {
++    b.reference_trace = 256;
++
+     const target = b.standardTargetOptions(.{});
+     const mode = b.option(std.builtin.Mode, "mode", "") orelse .Debug;
+     const doall = b.option(bool, "all", "Build all apps, default only selected steps") orelse false;
+diff --git a/demos/7guis/1counter.zig b/demos/7guis/1counter.zig
+index 731b5b1..c2d6942 100644
+--- a/demos/7guis/1counter.zig
++++ b/demos/7guis/1counter.zig
+@@ -72,7 +72,7 @@ pub const A = struct {
+ 
+ fn onclick(app: *const App, state: ?*anyopaque) u32 {
+     _ = app;
+-    const a = extras.ptrCast(A, state.?);
++    const a: *A = @ptrCast(@alignCast(state.?));
+     a.count += 1;
+     return 1;
+ }
+diff --git a/demos/logl/hello-window.zig b/demos/logl/hello-window.zig
+index c6121d7..da65c9c 100644
+--- a/demos/logl/hello-window.zig
++++ b/demos/logl/hello-window.zig
+@@ -167,7 +167,7 @@ fn WhitePixel(dpy: *c.Display, scr: c_int) c_ulong {
+     return ScreenOfDisplay(dpy, scr).*.white_pixel;
+ }
+ 
+-// #define RootWindow(dpy, scr) 	(ScreenOfDisplay(dpy,scr)->root)
++// #define RootWindow(dpy, scr)     (ScreenOfDisplay(dpy,scr)->root)
+ fn RootWindow(dpy: *c.Display, scr: c_int) c.Window {
+     return ScreenOfDisplay(dpy, scr).*.root;
+ }
+diff --git a/src/main.zig b/src/main.zig
+index 49c152d..13704da 100644
+--- a/src/main.zig
++++ b/src/main.zig
+@@ -860,7 +860,7 @@ pub fn App2() type {
+         }
+ 
+         pub fn get(self: *const Self, element: Element, comptime T: type) *T {
+-            return extras.ptrCast(T, self.attr(element, .data));
++            return @ptrCast(@alignCast(self.attr(element, .data)));
+         }
+ 
+         pub fn bounds(self: *const Self, element: Element) Rectangle {
+diff --git a/zigmod.lock b/zigmod.lock
+index 55ee6c7..8044e60 100644
+--- a/zigmod.lock
++++ b/zigmod.lock
+@@ -1,8 +1,8 @@
+ 2
+-git https://github.com/nektro/zig-color commit-b1df1f0d3561f2ff59ccddacd9b5c8efdaec2cf2
+-git https://github.com/nektro/zig-extras commit-100510135aa7be25b8b465ac32450678de009103
+-git https://github.com/nektro/zig-time commit-b9a93152af3ba73e5f681f73a67f0d676e2ad433
+-git https://github.com/nektro/zig-tracer commit-662774eedca41771f9ebd1ab45cfdc8e4319d4b4
+-git https://github.com/nektro/zig-xml commit-05aeff20237e0ea0556e4ac0f519a278e45b0cfb
+-git https://github.com/ziglibs/known-folders commit-aa24df42183ad415d10bc0a33e6238c437fc0f59
++git https://github.com/nektro/zig-color commit-eaf93f7c177e4bd0d6a258e88998e442cd905a69
++git https://github.com/nektro/zig-extras commit-cc8fb7cb1654df835a48473d67c001a44d2a6ea9
++git https://github.com/nektro/zig-time commit-25165db8e626434ab6eae2cff64ba5e72e4fa062
++git https://github.com/nektro/zig-tracer commit-cc75b7f652c7cd51cbfa6e3c7e8155cd153bb68b
++git https://github.com/nektro/zig-xml commit-fc07c763a98fa7961b65b0a2b95a2d0fa061fafb
++git https://github.com/ziglibs/known-folders commit-ab5cf5feb936fa3b72c95d3ad0c0c67791937ba1
+ git https://github.com/zigimg/zigimg commit-d9dbbe22b5f7b5f1f4772169ed93ffeed8e8124d
+diff --git a/zigmod.yml b/zigmod.yml
+index 1ce8875..e24cb55 100644
+--- a/zigmod.yml
++++ b/zigmod.yml
+@@ -1,7 +1,7 @@
+ id: l862p8h05u3xp3w5ydtuhks9wtd961ktm8ivzhdkso0ylf1i
+ name: magnolia
+ main: src/main.zig
+-min_zig_version: 0.13.0
++min_zig_version: 0.14.1
+ 
+ root_dependencies:
+   - src: git https://github.com/nektro/zig-extras
