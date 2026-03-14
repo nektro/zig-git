@@ -415,11 +415,17 @@ pub const Tree = struct {
             pub fn format(self: Mode, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
                 _ = fmt;
                 _ = options;
-
                 try writer.print("{}", .{self.type});
                 try writer.print("{}", .{self.perm_user});
                 try writer.print("{}", .{self.perm_group});
                 try writer.print("{}", .{self.perm_other});
+            }
+
+            pub fn nprint(self: Mode, writer: anytype) !void {
+                try self.type.nprint(writer);
+                try self.perm_user.nprint(writer);
+                try self.perm_group.nprint(writer);
+                try self.perm_other.nprint(writer);
             }
         };
 
@@ -433,7 +439,6 @@ pub const Tree = struct {
             pub fn format(self: Type, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
                 _ = fmt;
                 _ = options;
-
                 try writer.writeByte(switch (self) {
                     .file => '-',
                     .directory => 'd',
@@ -441,6 +446,16 @@ pub const Tree = struct {
                     .symlink => '-',
                     .none => '-',
                 });
+            }
+
+            pub fn nprint(self: Type, writer: anytype) !void {
+                try writer.writeAll(&.{switch (self) {
+                    .file => '-',
+                    .directory => 'd',
+                    .submodule => 'm',
+                    .symlink => '-',
+                    .none => '-',
+                }});
             }
         };
 
@@ -452,10 +467,17 @@ pub const Tree = struct {
             pub fn format(self: Perm, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
                 _ = fmt;
                 _ = options;
-
                 try writer.writeByte(if (self.read) 'r' else '-');
                 try writer.writeByte(if (self.write) 'w' else '-');
                 try writer.writeByte(if (self.execute) 'x' else '-');
+            }
+
+            pub fn nprint(self: Perm, writer: anytype) !void {
+                try writer.writeAll(&.{
+                    if (self.read) 'r' else '-',
+                    if (self.write) 'w' else '-',
+                    if (self.execute) 'x' else '-',
+                });
             }
         };
     };
