@@ -5,6 +5,7 @@ const time = @import("time");
 const extras = @import("extras");
 const tracer = @import("tracer");
 const nfs = @import("nfs");
+const nio = @import("nio");
 
 pub const Id = []const u8;
 
@@ -108,6 +109,28 @@ pub fn ensureObjId(comptime T: type, input: string) T {
 pub fn getObject(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !string {
     const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
+
+    if (obj.len == 40) blk: { //sha1 object
+        var sub_path: [49:0]u8 = "objects/00/00000000000000000000000000000000000000".*;
+        @memcpy(sub_path[8..][0..2], obj[0..2]);
+        @memcpy(sub_path[11..], obj[2..]);
+        const objfile = dir.openFile(&sub_path, .{}) catch |err| switch (err) {
+            error.ENOENT => break :blk,
+            else => |e| return e,
+        };
+        defer objfile.close();
+        var bufr = nio.BufferedReader(4096, nfs.File).init(objfile);
+        var list = std.ArrayList(u8).init(alloc);
+        defer list.deinit();
+        try list.ensureUnusedCapacity(512);
+        try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
+        const header = list.items[0..std.mem.indexOfScalar(u8, list.items, 0).?];
+        const _type = header[0..std.mem.indexOfScalar(u8, header, ' ').?];
+        const content_len = try extras.parseDigits(u64, header[_type.len + 1 ..], 10);
+        std.debug.assert(list.items[header.len + 1 ..].len == content_len);
+        list.replaceRangeAssumeCapacity(0, header.len + 1, "");
+        return list.toOwnedSlice();
+    }
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
