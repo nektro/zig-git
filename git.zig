@@ -604,6 +604,12 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             .sub_path = kter.rest(),
         });
     }
+    if (lineiter.peek() == null) {
+        return TreeDiff{
+            .overview = overview.items,
+            .diffs = diffs.items,
+        };
+    }
 
     // diff --git a/notes/all_packages.txt b/notes/all_packages.txt
     // index c06b41d..e8f91cf 100644
