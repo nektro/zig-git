@@ -517,80 +517,6 @@ pub fn getTreeDiffPath(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitI
     return std.mem.trim(u8, result.stdout, "\n");
 }
 
-pub fn parseTreeDiffMeta(input: string) !TreeDiffMeta {
-    const t = tracer.trace(@src(), "", .{});
-    defer t.end();
-
-    var result = std.mem.zeroes(TreeDiffMeta);
-    var lineiter = std.mem.splitScalar(u8, input, '\n');
-
-    while (lineiter.next()) |lin| {
-        if (lin.len == 0) break;
-        std.debug.assert(lin[0] == ':');
-        result.files_changed += 1;
-    }
-
-    std.debug.assert(std.mem.startsWith(u8, lineiter.next() orelse return result, "diff --git"));
-    blk: while (true) {
-        while (lineiter.next()) |lin| {
-            if (std.mem.startsWith(u8, lin, "index")) break;
-            if (std.mem.startsWith(u8, lin, "new file mode")) continue;
-            if (std.mem.startsWith(u8, lin, "deleted file mode")) continue;
-            if (std.mem.startsWith(u8, lin, "old mode")) continue;
-            if (std.mem.startsWith(u8, lin, "new mode")) continue;
-            if (std.mem.startsWith(u8, lin, "diff --git")) continue :blk;
-
-            std.log.err("{s}", .{lin});
-            unreachable;
-        }
-        if (lineiter.peek() == null) break; // handle empty file being last or being at the end
-
-        if (std.mem.startsWith(u8, lineiter.peek().?, "Binary files")) {
-            _ = lineiter.next().?;
-            result.lines_added += 1;
-            result.lines_removed += 1;
-            if (lineiter.peek() == null) break; // handle binary file being last
-            std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "diff --git"));
-            continue;
-        }
-
-        if (std.mem.startsWith(u8, lineiter.peek().?, "diff --git")) { // handle empty file being in the middle
-            std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "diff --git"));
-            continue;
-        }
-
-        // Every affected text file in the diff has a preamble like below
-        //
-        // diff --git a/notes/all_packages.txt b/notes/all_packages.txt
-        // index c06b41d..e8f91cf 100644
-        // --- a/notes/all_packages.txt
-        // +++ b/notes/all_packages.txt
-        std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "---"));
-        std.debug.assert(std.mem.startsWith(u8, lineiter.next().?, "+++"));
-
-        while (lineiter.next()) |lin| {
-            if (std.mem.startsWith(u8, lin, "diff --git")) break;
-            switch (lin[0]) {
-                '@' => continue, // @@ -89,3 +89,4 @@ freedesktop/xorg/libsm
-                ' ' => continue,
-                '+' => result.lines_added += 1,
-                '-' => result.lines_removed += 1,
-                '\\' => continue, // \ No newline at end of file
-                else => @panic(lin),
-            }
-        }
-        if (lineiter.peek() == null) break; // handle being at the end
-    }
-
-    return result;
-}
-
-pub const TreeDiffMeta = struct {
-    files_changed: u16,
-    lines_added: u32,
-    lines_removed: u32,
-};
-
 pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
@@ -598,6 +524,7 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
     var lineiter = std.mem.splitScalar(u8, input, '\n');
     var overview = std.ArrayList(TreeDiff.StateLine).init(alloc);
     var diffs = std.ArrayList(TreeDiff.Diff).init(alloc);
+    var meta = std.mem.zeroes(TreeDiff.Meta);
 
     while (lineiter.next()) |lin| {
         if (lin.len == 0) break;
@@ -626,11 +553,13 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             .action = std.meta.stringToEnum(TreeDiff.Action, action_s).?,
             .sub_path = kter.rest(),
         });
+        meta.files_changed += 1;
     }
     if (lineiter.peek() == null) {
         return TreeDiff{
             .overview = overview.items,
             .diffs = diffs.items,
+            .meta = meta,
         };
     }
 
@@ -747,9 +676,11 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
                 }
                 if (lin[0] == '-') {
                     diff.subs += 1;
+                    meta.lines_removed += 1;
                 }
                 if (lin[0] == '+') {
                     diff.adds += 1;
+                    meta.lines_added += 1;
                 }
                 lineiter.index.? += lin.len + 1;
 
@@ -764,12 +695,14 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
     return TreeDiff{
         .overview = overview.items,
         .diffs = diffs.items,
+        .meta = meta,
     };
 }
 
 pub const TreeDiff = struct {
     overview: []const StateLine,
     diffs: []const Diff,
+    meta: Meta,
 
     pub const StateLine = struct {
         before: State,
@@ -807,6 +740,12 @@ pub const TreeDiff = struct {
         adds: u32,
         subs: u32,
         content: string,
+    };
+
+    pub const Meta = struct {
+        files_changed: u32,
+        lines_added: u64,
+        lines_removed: u64,
     };
 };
 
