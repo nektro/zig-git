@@ -965,3 +965,89 @@ pub const BlameIterator = struct {
         line: string,
     };
 };
+
+pub const Repository = struct {
+    gitdir: nfs.Dir,
+    gpa: std.mem.Allocator,
+    raw_object_contents: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
+    commits: std.StringArrayHashMapUnmanaged(Commit),
+
+    pub fn init(gitdir: nfs.Dir, gpa: std.mem.Allocator) Repository {
+        return .{
+            .gitdir = gitdir,
+            .gpa = gpa,
+            .commits = .empty,
+        };
+    }
+
+    pub fn deinit(r: *Repository) void {
+        for (r.raw_object_contents.values()) |v| r.gpa.free(v);
+        r.raw_object_contents.deinit(r.gpa);
+        r.commits.deinit(r.gpa);
+    }
+
+    fn getObject(r: *Repository, obj: Id) !?[]const u8 {
+        if (r.raw_object_contents.get(obj)) |content| {
+            return content;
+        }
+        if (obj.len == 40) blk: { //sha1 object
+            var sub_path: [49:0]u8 = "objects/00/00000000000000000000000000000000000000".*;
+            @memcpy(sub_path[8..][0..2], obj[0..2]);
+            @memcpy(sub_path[11..], obj[2..]);
+            const objfile = r.gitdir.openFile(&sub_path, .{}) catch |err| switch (err) {
+                error.ENOENT => break :blk,
+                else => |e| return e,
+            };
+            defer objfile.close();
+            var bufr = nio.BufferedReader(4096, nfs.File).init(objfile);
+            var list: std.ArrayList(u8) = .init(r.gpa);
+            errdefer list.deinit();
+            try list.ensureUnusedCapacity(512);
+            try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
+            const content = try list.toOwnedSlice();
+            try r.raw_object_contents.put(r.gpa, obj, content);
+            return content;
+        }
+        return null;
+    }
+
+    fn getGitObject(r: *Repository, obj: Id, arena: std.mem.Allocator) !?GitObject {
+        if (try r.getObject(obj)) |data| {
+            const header = data[0..std.mem.indexOfScalar(u8, data, 0).?];
+            const _type = header[0..std.mem.indexOfScalar(u8, header, ' ').?];
+            const content_len = try extras.parseDigits(u64, header[_type.len + 1 ..], 10);
+            std.debug.assert(data[header.len + 1 ..].len == content_len);
+            return .{
+                .type = std.meta.stringToEnum(RefType, _type).?,
+                .content = try arena.dupe(u8, data[header.len + 1 ..]),
+            };
+        }
+        return null;
+    }
+
+    const RefType = enum {
+        blob,
+        tree,
+        commit,
+        tag,
+    };
+
+    const GitObject = struct {
+        type: RefType,
+        content: []const u8,
+    };
+
+    pub fn getCommit(r: *Repository, arena: std.mem.Allocator, id: CommitId) !?struct { CommitId, Commit } {
+        if (r.commits.getPtr(id.id)) |val| {
+            return .{ id, val.* };
+        }
+        if (try r.getGitObject(id.id, arena)) |obj| {
+            if (obj.type == .commit) {
+                const commit = try parseCommit(arena, obj.content);
+                try r.commits.put(r.gpa, id.id, commit);
+                return .{ id, commit };
+            }
+        }
+        return null;
+    }
+};
