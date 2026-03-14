@@ -256,3 +256,9 @@ test {
     const alloc = arena.allocator();
     _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-a0482e3446cea426bf16571e0000423ed5b25af0")); // linux
 }
+test {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try git.parseTreeDiff(alloc, @embedFile("./testdata/diff-e90937e756938f03d37d4cae7c82316a3a425944")); // linux
+}

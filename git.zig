@@ -624,7 +624,8 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
         const first_line = lineiter.next().?;
         std.debug.assert(std.mem.startsWith(u8, first_line, "diff --git"));
         var i = diffs.items.len;
-        for (overview.items[0..i]) |o| i -= @intFromBool(o.action == .T);
+        var n: usize = 0;
+        while (n < i) : (n += 1) i -= @intFromBool(overview.items[n].action == .T);
         try diffs.append(.{
             .index = .{ "", "" },
             .before_path = overview.items[i].sub_path,
