@@ -106,7 +106,7 @@ pub fn ensureObjId(comptime T: type, input: string) T {
 // TODO make this return a Reader when we implement it ourselves
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getObject(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !string {
+pub fn getObjectContent(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !string {
     const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
