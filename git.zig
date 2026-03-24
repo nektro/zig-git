@@ -947,13 +947,14 @@ pub const BlameIterator = struct {
 pub const Repository = struct {
     gitdir: nfs.Dir,
     gpa: std.mem.Allocator,
-    raw_object_contents: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
+    raw_object_contents: std.StringArrayHashMapUnmanaged([]const u8),
     commits: std.StringArrayHashMapUnmanaged(Commit),
 
     pub fn init(gitdir: nfs.Dir, gpa: std.mem.Allocator) Repository {
         return .{
             .gitdir = gitdir,
             .gpa = gpa,
+            .raw_object_contents = .empty,
             .commits = .empty,
         };
     }
