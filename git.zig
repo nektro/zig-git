@@ -950,6 +950,7 @@ pub const Repository = struct {
     gpa: std.mem.Allocator,
     raw_object_contents: std.StringArrayHashMapUnmanaged([]const u8),
     commits: std.StringArrayHashMapUnmanaged(Commit),
+    trees: std.StringArrayHashMapUnmanaged(Tree),
 
     pub fn init(gitdir: nfs.Dir, gpa: std.mem.Allocator) Repository {
         return .{
@@ -957,6 +958,7 @@ pub const Repository = struct {
             .gpa = gpa,
             .raw_object_contents = .empty,
             .commits = .empty,
+            .trees = .empty,
         };
     }
 
@@ -964,6 +966,8 @@ pub const Repository = struct {
         for (r.raw_object_contents.values()) |v| r.gpa.free(v);
         r.raw_object_contents.deinit(r.gpa);
         r.commits.deinit(r.gpa);
+        for (r.trees.values()) |v| r.gpa.free(v.children);
+        r.trees.deinit(r.gpa);
     }
 
     fn getObject(r: *Repository, obj: Id) !?[]const u8 {
@@ -1026,6 +1030,53 @@ pub const Repository = struct {
                 const commit = try parseCommit(arena, obj.content);
                 try r.commits.put(r.gpa, id.id, commit);
                 return .{ id, commit };
+            }
+        }
+        return null;
+    }
+
+    pub fn getTree(r: *Repository, arena: std.mem.Allocator, id: TreeId) !?struct { TreeId, Tree } {
+        if (r.trees.getPtr(id.id)) |val| {
+            return .{ id, val.* };
+        }
+        if (try r.getGitObject(id.id, arena)) |obj| {
+            if (obj.type == .tree) {
+                var children = std.ArrayList(Tree.Object).init(r.gpa);
+                errdefer children.deinit();
+                var i: usize = 0;
+                while (i < obj.content.len) {
+                    const mode_end = std.mem.indexOfScalar(u8, obj.content[i..], ' ').?;
+                    const mode = obj.content[i..][0..mode_end];
+                    i += mode_end + 1;
+
+                    const name_end = std.mem.indexOfScalar(u8, obj.content[i..], 0).?;
+                    const name = obj.content[i..][0..name_end :0];
+                    i += name_end + 1;
+
+                    const oid_raw = obj.content[i..][0..20].*;
+                    const oid_hex = (try arena.alloc(u8, 40))[0..40];
+                    oid_hex.* = extras.to_hex(oid_raw);
+                    i += 20;
+
+                    var mode_buf: [6]u8 = @splat('0');
+                    @memcpy(mode_buf[6 - mode.len ..], mode);
+                    const mode_real = try parseTreeMode(&mode_buf);
+
+                    try children.append(.{
+                        .mode = mode_real,
+                        .name = name,
+                        .id = switch (mode_real.type) {
+                            .file => .{ .blob = .{ .id = oid_hex } },
+                            .directory => .{ .tree = .{ .id = oid_hex } },
+                            .submodule => .{ .commit = .{ .id = oid_hex } },
+                            .symlink => .{ .blob = .{ .id = oid_hex } },
+                            .none => unreachable,
+                        },
+                    });
+                }
+                const tree: Tree = .{ .children = try children.toOwnedSlice() };
+                try r.trees.put(r.gpa, id.id, tree);
+                return .{ id, tree };
             }
         }
         return null;
