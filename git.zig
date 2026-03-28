@@ -7,7 +7,7 @@ const tracer = @import("tracer");
 const nfs = @import("nfs");
 const nio = @import("nio");
 
-pub const Id = []const u8;
+pub const Id = *const [40]u8;
 
 pub const TreeId = struct {
     id: Id,
@@ -99,7 +99,7 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: nfs.Dir) !?CommitId {
 // 40 is length of sha1 hash
 pub fn ensureObjId(comptime T: type, input: string) T {
     extras.assertLog(input.len == 40, "ensureObjId: {s}", .{input});
-    return .{ .id = input };
+    return .{ .id = input[0..40] };
 }
 
 // TODO make this inspect .git/objects
@@ -579,7 +579,7 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
         var n: usize = 0;
         while (n < i) : (n += 1) i -= @intFromBool(overview.items[n].action == .T);
         try diffs.append(.{
-            .index = .{ "", "" },
+            .index = @splat(.{ .id = undefined }),
             .before_path = overview.items[i].sub_path,
             .after_path = overview.items[i].sub_path,
             .subs = 0,
@@ -596,10 +596,11 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
                 if (std.mem.startsWith(u8, lin, "index")) {
                     const index = lin[6..];
                     var iiter = std.mem.splitSequence(u8, index, "..");
-                    diff.index[0] = iiter.next().?;
-                    diff.index[1] = iiter.next().?;
+                    var xx: [2][]const u8 = .{ iiter.next().?, iiter.next().? };
                     std.debug.assert(iiter.next() == null);
-                    if (std.mem.indexOfScalar(u8, diff.index[1], ' ')) |j| diff.index[1] = diff.index[1][0..j];
+                    if (std.mem.indexOfScalar(u8, xx[1], ' ')) |j| xx[1] = xx[1][0..j];
+                    diff.index[0] = ensureObjId(CommitId, xx[0]);
+                    diff.index[1] = ensureObjId(CommitId, xx[1]);
 
                     lineiter.index.? += lin.len + 1;
                     break;
@@ -734,7 +735,7 @@ pub const TreeDiff = struct {
     };
 
     pub const Diff = struct {
-        index: [2][]const u8,
+        index: [2]CommitId,
         before_path: string,
         after_path: string,
         adds: u32,
