@@ -364,6 +364,21 @@ pub const Tree = struct {
         return o;
     }
 
+    pub fn find(self: Tree, name: string) ?Object {
+        for (self.children) |item| {
+            if (std.ascii.eqlIgnoreCase(item.name, name)) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    pub fn findBlob(self: Tree, name: string) ?Object {
+        const o = self.find(name) orelse return null;
+        if (o.id != .blob) return null;
+        return o;
+    }
+
     pub const Object = struct {
         mode: Mode,
         id: @This().Id,
