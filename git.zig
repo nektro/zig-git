@@ -833,6 +833,39 @@ pub const Ref = struct {
     label: string,
 };
 
+pub fn parseTag(tagfile: string) !Tag {
+    const t = tracer.trace(@src(), "", .{});
+    defer t.end();
+
+    var iter = std.mem.splitScalar(u8, tagfile, '\n');
+    var result: Tag = undefined;
+    result.tagger = null;
+    const object = extras.trimPrefixEnsure(iter.next().?, "object ").?;
+    std.debug.assert(object.len == 40);
+    result.object = object[0..40];
+    const ty = extras.trimPrefixEnsure(iter.next().?, "type ").?;
+    result.type = std.meta.stringToEnum(OidKind, ty).?;
+    const tag = extras.trimPrefixEnsure(iter.next().?, "tag ").?;
+    _ = tag;
+
+    while (true) {
+        const line = iter.next() orelse break;
+        if (line.len == 0) break;
+        const space = std.mem.indexOfScalar(u8, line, ' ').?;
+        const k = line[0..space];
+        if (std.mem.eql(u8, k, "tagger")) result.tagger = try parseCommitUserAndAt(line[space + 1 ..]);
+    }
+    result.message = iter.rest();
+    return result;
+}
+
+pub const Tag = struct {
+    object: Id,
+    type: OidKind,
+    tagger: ?UserAndAt,
+    message: string,
+};
+
 // TODO make this inspect .git/objects
 pub fn getBlame(alloc: std.mem.Allocator, dir: nfs.Dir, at: CommitId, sub_path: string) !string {
     const t = tracer.trace(@src(), " {s} -- {s}", .{ at.id, sub_path });
