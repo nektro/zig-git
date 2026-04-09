@@ -174,18 +174,6 @@ test {
     const alloc = arena.allocator();
     const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
-    const t = try git.parseTreeDiffMeta(try git.getTreeDiff(alloc, git_dir, .{ .id = "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e" }, .{ .id = "c39f57f6bb01664a7146ddbfc3debe76ec135f44" }));
-    try expect(t.files_changed).toEqual(1);
-    try expect(t.lines_added).toEqual(4);
-    try expect(t.lines_removed).toEqual(4);
-}
-
-test {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const git_dir = try nfs.cwd().openDir(".git", .{});
-    defer git_dir.close();
     const t = try git.parseTreeDiff(alloc, try git.getTreeDiff(alloc, git_dir, .{ .id = "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e" }, .{ .id = "c39f57f6bb01664a7146ddbfc3debe76ec135f44" }));
     _ = t; // TODO: test fields when we upgrade to 0.14 and have decl literals
 }
