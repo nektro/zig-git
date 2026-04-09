@@ -770,7 +770,7 @@ pub const TreeDiff = struct {
     };
 };
 
-pub fn getBranches(alloc: std.mem.Allocator, dir: nfs.Dir) ![]const Ref {
+pub fn getBranches(alloc: std.mem.Allocator, dir: nfs.Dir) ![]Ref {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
@@ -788,15 +788,14 @@ pub fn getBranches(alloc: std.mem.Allocator, dir: nfs.Dir) ![]const Ref {
     while (iter.next()) |line| {
         var jter = std.mem.splitScalar(u8, line, ' ');
         try list.append(Ref{
-            .commit = ensureObjId(CommitId, jter.next().?),
+            .oid = ensureObjId(CommitId, jter.next().?).id,
             .label = extras.trimPrefixEnsure(jter.rest(), "refs/heads/").?,
-            .tag = null,
         });
     }
     return list.toOwnedSlice();
 }
 
-pub fn getTags(alloc: std.mem.Allocator, dir: nfs.Dir) ![]const Ref {
+pub fn getTags(alloc: std.mem.Allocator, dir: nfs.Dir) ![]Ref {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
@@ -807,7 +806,7 @@ pub fn getTags(alloc: std.mem.Allocator, dir: nfs.Dir) ![]const Ref {
     const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "show-ref", "--tags", "--dereference" },
+        .argv = &.{ "git", "show-ref", "--tags" },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
     if (result.term == .Exited and result.term.Exited == 1) return &.{}; // show-ref exits 1 when there are no tags
@@ -820,43 +819,18 @@ pub fn getTags(alloc: std.mem.Allocator, dir: nfs.Dir) ![]const Ref {
         var jter = std.mem.splitScalar(u8, line, ' ');
         const id = ensureObjId(CommitId, jter.next().?).id;
         const label = extras.trimPrefixEnsure(jter.rest(), "refs/tags/").?;
-        extras.assertLog(!std.mem.endsWith(u8, label, "^{}"), "{s}", .{label});
 
-        switch (try getType(alloc, dir, id)) {
-            .tree => continue,
-            .blob => unreachable,
-            .commit => {
-                try list.append(Ref{
-                    .label = label,
-                    .commit = ensureObjId(CommitId, id),
-                    .tag = null,
-                });
-            },
-            .tag => {
-                const derefline = iter.next().?;
-                var kter = std.mem.splitScalar(u8, derefline, ' ');
-                const id2 = ensureObjId(CommitId, kter.next().?).id;
-                const label2 = extras.trimPrefixEnsure(kter.rest(), "refs/tags/").?;
-                extras.assertLog(std.mem.endsWith(u8, label2, "^{}"), "{s}", .{label2});
-                std.debug.assert(std.mem.eql(u8, label, extras.trimSuffixEnsure(label2, "^{}").?));
-                // extras.assertLog(try isType(alloc, dir, id2, .commit), id2); // linux kernel has a single tag that points at a tree
-                if (!try isType(alloc, dir, id2, .commit)) continue;
-
-                try list.append(Ref{
-                    .label = label,
-                    .commit = ensureObjId(CommitId, id2),
-                    .tag = ensureObjId(TagId, id),
-                });
-            },
-        }
+        try list.append(Ref{
+            .oid = id,
+            .label = label,
+        });
     }
     return list.toOwnedSlice();
 }
 
 pub const Ref = struct {
+    oid: Id,
     label: string,
-    commit: CommitId,
-    tag: ?TagId,
 };
 
 // TODO make this inspect .git/objects
