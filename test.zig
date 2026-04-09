@@ -28,7 +28,7 @@ test {
     const alloc = arena.allocator();
     const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
-    try expect(try git.getObject(alloc, git_dir, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e")).toEqualString(
+    try expect(try git.getObjectContent(alloc, git_dir, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e")).toEqualString(
         \\tree 5403fecad0fde9120535321f222a061abc2849d9
         \\parent c39f57f6bb01664a7146ddbfc3debe76ec135f44
         \\author Meghan Denny <hello@nektro.net> 1692246864 -0700
@@ -76,7 +76,7 @@ test {
     const alloc = arena.allocator();
     const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
-    const c = try git.parseCommit(alloc, try git.getObject(alloc, git_dir, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e"));
+    const c = try git.parseCommit(alloc, try git.getObjectContent(alloc, git_dir, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e"));
     try expect(c.tree.id).toEqualString("5403fecad0fde9120535321f222a061abc2849d9");
     try expect(c.parents.len).toEqual(1);
     try expect(c.parents[0].id).toEqualString("c39f57f6bb01664a7146ddbfc3debe76ec135f44");
@@ -98,7 +98,7 @@ test {
     const alloc = arena.allocator();
     const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
-    try expect(try git.getObject(alloc, git_dir, "5403fecad0fde9120535321f222a061abc2849d9")).toEqualString(
+    try expect(try git.getObjectContent(alloc, git_dir, "5403fecad0fde9120535321f222a061abc2849d9")).toEqualString(
         // zig fmt: off
         "100644 blob 8e8d2ceba4b327ce9db93f988492d0e21a461012\t.gitattributes\n" ++
         "100644 blob bb2a57bd81d13975f2a74ae5dd0e652de07bb8a7\t.gitignore\n" ++
@@ -116,7 +116,7 @@ test {
     const alloc = arena.allocator();
     const git_dir = try nfs.cwd().openDir(".git", .{});
     defer git_dir.close();
-    const t = try git.parseTree(alloc, try git.getObject(alloc, git_dir, "5403fecad0fde9120535321f222a061abc2849d9"));
+    const t = try git.parseTree(alloc, try git.getObjectContent(alloc, git_dir, "5403fecad0fde9120535321f222a061abc2849d9"));
     // TODO: test fields when we upgrade to 0.14 and have decl literals
     // try expect(try extras.mapBy(alloc, t.children, .id)).toEqualSlice(&.{
     //     .{ .blob = .{ .id = "8e8d2ceba4b327ce9db93f988492d0e21a461012" } },
