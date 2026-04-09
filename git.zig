@@ -41,6 +41,26 @@ pub const TagId = struct {
     }
 };
 
+pub const OidKind = enum {
+    blob,
+    tree,
+    commit,
+    tag,
+};
+
+pub const AnyId = union(OidKind) {
+    blob: BlobId,
+    tree: TreeId,
+    commit: CommitId,
+    tag: TagId,
+
+    pub fn erase(self: AnyId) Id {
+        return switch (self) {
+            inline else => |v| v.id,
+        };
+    }
+};
+
 pub fn version(alloc: std.mem.Allocator) !string {
     const result = try std.process.Child.run(.{
         .allocator = alloc,
@@ -139,7 +159,7 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !u64 {
 // TODO make this inspect .git manually
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn isType(alloc: std.mem.Allocator, dir: nfs.Dir, maybeobj: Id, typ: Tree.Object.Id.Tag) !bool {
+pub fn isType(alloc: std.mem.Allocator, dir: nfs.Dir, maybeobj: Id, typ: OidKind) !bool {
     const t = tracer.trace(@src(), " {s} = {s} ?", .{ maybeobj, @tagName(typ) });
     defer t.end();
 
@@ -150,13 +170,13 @@ pub fn isType(alloc: std.mem.Allocator, dir: nfs.Dir, maybeobj: Id, typ: Tree.Ob
     });
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     const output = std.mem.trimRight(u8, result.stdout, "\n");
-    return std.meta.stringToEnum(Tree.Object.Id.Tag, output).? == typ;
+    return std.meta.stringToEnum(OidKind, output).? == typ;
 }
 
 // TODO make this inspect .git manually
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getType(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !Tree.Object.Id.Tag {
+pub fn getType(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !OidKind {
     const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
@@ -167,7 +187,7 @@ pub fn getType(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !Tree.Object.Id.
     });
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     const output = std.mem.trimRight(u8, result.stdout, "\n");
-    return std.meta.stringToEnum(Tree.Object.Id.Tag, output) orelse @panic(output);
+    return std.meta.stringToEnum(OidKind, output) orelse @panic(output);
 }
 
 // TODO make this inspect .git/objects manually
@@ -311,18 +331,18 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
         }
         var jter = std.mem.splitScalar(u8, line, ' ');
         const mode = jter.next().?;
-        const otype = std.meta.stringToEnum(Tree.Object.Id.Tag, jter.next().?).?;
+        const otype = std.meta.stringToEnum(OidKind, jter.next().?).?;
         const id_and_name = jter.rest();
         const tab_pos = std.mem.indexOfScalar(u8, id_and_name, '\t').?; // why git. why.
         std.debug.assert(tab_pos == 40);
         const id = id_and_name[0..tab_pos][0..40];
         const name = id_and_name[tab_pos + 1 ..];
 
-        inline for (std.meta.fields(Tree.Object.Id)) |item| {
+        inline for (std.meta.fields(AnyId)) |item| {
             if (std.mem.eql(u8, item.name, @tagName(otype))) {
                 try children.append(.{
                     .mode = try parseTreeMode(mode),
-                    .id = @unionInit(Tree.Object.Id, item.name, item.type{ .id = id }),
+                    .id = @unionInit(AnyId, item.name, item.type{ .id = id }),
                     .name = name,
                 });
             }
@@ -381,23 +401,8 @@ pub const Tree = struct {
 
     pub const Object = struct {
         mode: Mode,
-        id: @This().Id,
+        id: AnyId,
         name: string,
-
-        pub const Id = union(enum) {
-            blob: BlobId,
-            tree: TreeId,
-            commit: CommitId,
-            tag: TagId,
-
-            pub const Tag = std.meta.Tag(@This());
-
-            pub fn erase(self: @This()) top.Id {
-                return switch (self) {
-                    inline else => |v| v.id,
-                };
-            }
-        };
 
         pub const Mode = struct {
             type: Type,
