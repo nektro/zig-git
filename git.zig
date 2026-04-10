@@ -41,14 +41,14 @@ pub const TagId = struct {
     }
 };
 
-pub const OidKind = enum {
+pub const RefType = enum {
     blob,
     tree,
     commit,
     tag,
 };
 
-pub const AnyId = union(OidKind) {
+pub const AnyId = union(RefType) {
     blob: BlobId,
     tree: TreeId,
     commit: CommitId,
@@ -159,7 +159,7 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !u64 {
 // TODO make this inspect .git manually
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn isType(alloc: std.mem.Allocator, dir: nfs.Dir, maybeobj: Id, typ: OidKind) !bool {
+pub fn isType(alloc: std.mem.Allocator, dir: nfs.Dir, maybeobj: Id, typ: RefType) !bool {
     const t = tracer.trace(@src(), " {s} = {s} ?", .{ maybeobj, @tagName(typ) });
     defer t.end();
 
@@ -170,13 +170,13 @@ pub fn isType(alloc: std.mem.Allocator, dir: nfs.Dir, maybeobj: Id, typ: OidKind
     });
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     const output = std.mem.trimRight(u8, result.stdout, "\n");
-    return std.meta.stringToEnum(OidKind, output).? == typ;
+    return std.meta.stringToEnum(RefType, output).? == typ;
 }
 
 // TODO make this inspect .git manually
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getType(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !OidKind {
+pub fn getType(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !RefType {
     const t = tracer.trace(@src(), " {s}", .{obj});
     defer t.end();
 
@@ -187,7 +187,7 @@ pub fn getType(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !OidKind {
     });
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     const output = std.mem.trimRight(u8, result.stdout, "\n");
-    return std.meta.stringToEnum(OidKind, output) orelse @panic(output);
+    return std.meta.stringToEnum(RefType, output) orelse @panic(output);
 }
 
 // TODO make this inspect .git/objects manually
@@ -331,7 +331,7 @@ pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
         }
         var jter = std.mem.splitScalar(u8, line, ' ');
         const mode = jter.next().?;
-        const otype = std.meta.stringToEnum(OidKind, jter.next().?).?;
+        const otype = std.meta.stringToEnum(RefType, jter.next().?).?;
         const id_and_name = jter.rest();
         const tab_pos = std.mem.indexOfScalar(u8, id_and_name, '\t').?; // why git. why.
         std.debug.assert(tab_pos == 40);
@@ -844,7 +844,7 @@ pub fn parseTag(tagfile: string) !Tag {
     std.debug.assert(object.len == 40);
     result.object = object[0..40];
     const ty = extras.trimPrefixEnsure(iter.next().?, "type ").?;
-    result.type = std.meta.stringToEnum(OidKind, ty).?;
+    result.type = std.meta.stringToEnum(RefType, ty).?;
     const tag = extras.trimPrefixEnsure(iter.next().?, "tag ").?;
     _ = tag;
 
@@ -861,7 +861,7 @@ pub fn parseTag(tagfile: string) !Tag {
 
 pub const Tag = struct {
     object: Id,
-    type: OidKind,
+    type: RefType,
     tagger: ?UserAndAt,
     message: string,
 };
@@ -1155,13 +1155,6 @@ pub const Repository = struct {
         }
         return null;
     }
-
-    const RefType = enum {
-        blob,
-        tree,
-        commit,
-        tag,
-    };
 
     const GitObject = struct {
         type: RefType,
