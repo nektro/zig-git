@@ -7,7 +7,7 @@
 :100644 100644 95057f7567db22226d9cb09a667a56e387a33a46 dd1132508a0db29a32ec977b30f64b20aa43e03d M	tools/testing/selftests/vDSO/vdso_test_getrandom.c
 
 diff --git a/tools/testing/selftests/vDSO/Makefile b/tools/testing/selftests/vDSO/Makefile
-index 12a0614b9fd4..918a2caa070e 100644
+index 12a0614b9fd4983deffe5d6a7cfa06ba8d92a516..918a2caa070ebc681a9525f0518afffcf10f5ae3 100644
 --- a/tools/testing/selftests/vDSO/Makefile
 +++ b/tools/testing/selftests/vDSO/Makefile
 @@ -12,7 +12,7 @@ TEST_GEN_PROGS += vdso_test_correctness
@@ -20,7 +20,7 @@ index 12a0614b9fd4..918a2caa070e 100644
  ifeq ($(CONFIG_X86_32),y)
  LDLIBS += -lgcc_s
 diff --git a/tools/testing/selftests/vDSO/vdso_config.h b/tools/testing/selftests/vDSO/vdso_config.h
-index 722260f97561..5fdd0f362337 100644
+index 722260f9756198956f0dfccced907284b6851e76..5fdd0f36233742bc47ae79f23d2cfae5a0f56dee 100644
 --- a/tools/testing/selftests/vDSO/vdso_config.h
 +++ b/tools/testing/selftests/vDSO/vdso_config.h
 @@ -58,6 +58,7 @@
@@ -41,7 +41,7 @@ index 722260f97561..5fdd0f362337 100644
  		"__kernel_gettimeofday",
 diff --git a/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c b/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c
 deleted file mode 100644
-index 9ce795b806f0..000000000000
+index 9ce795b806f0992b83cef78c7e16fac0e54750da..0000000000000000000000000000000000000000
 --- a/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c
 +++ /dev/null
 @@ -1,58 +0,0 @@
@@ -105,14 +105,14 @@ index 9ce795b806f0..000000000000
 -}
 diff --git a/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c b/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c
 new file mode 120000
-index 000000000000..4d3d96f1e440
+index 0000000000000000000000000000000000000000..4d3d96f1e440c965474681a6f35375a60b3921be
 --- /dev/null
 +++ b/tools/testing/selftests/vDSO/vdso_standalone_test_x86.c
 @@ -0,0 +1 @@
 +vdso_test_gettimeofday.c
 \ No newline at end of file
 diff --git a/tools/testing/selftests/vDSO/vdso_test_chacha.c b/tools/testing/selftests/vDSO/vdso_test_chacha.c
-index 8757f738b0b1..0aad682b12c8 100644
+index 8757f738b0b1a76a48c83c5e5df79925a30c1bc7..0aad682b12c8836efabb49a65a47cf87466891a3 100644
 --- a/tools/testing/selftests/vDSO/vdso_test_chacha.c
 +++ b/tools/testing/selftests/vDSO/vdso_test_chacha.c
 @@ -76,7 +76,8 @@ static void reference_chacha20_blocks(uint8_t *dst_bytes, const uint32_t *key, u
@@ -126,7 +126,7 @@ index 8757f738b0b1..0aad682b12c8 100644
  
  int main(int argc, char *argv[])
 diff --git a/tools/testing/selftests/vDSO/vdso_test_clock_getres.c b/tools/testing/selftests/vDSO/vdso_test_clock_getres.c
-index 38d46a8bf7cb..b5d5f59f725a 100644
+index 38d46a8bf7cba7a9b4a9b13b5eb17aa207972bd0..b5d5f59f725a703c357dfca91bfe170aaaeb42fa 100644
 --- a/tools/testing/selftests/vDSO/vdso_test_clock_getres.c
 +++ b/tools/testing/selftests/vDSO/vdso_test_clock_getres.c
 @@ -13,7 +13,6 @@
@@ -138,7 +138,7 @@ index 38d46a8bf7cb..b5d5f59f725a 100644
  #include <stdint.h>
  #include <stdio.h>
 diff --git a/tools/testing/selftests/vDSO/vdso_test_correctness.c b/tools/testing/selftests/vDSO/vdso_test_correctness.c
-index 5fb97ad67eea..da651cf53c6c 100644
+index 5fb97ad67eeaf17b6cfa4f82783c57894f03e5c5..da651cf53c6ca4242085de109c7fc57bd807297c 100644
 --- a/tools/testing/selftests/vDSO/vdso_test_correctness.c
 +++ b/tools/testing/selftests/vDSO/vdso_test_correctness.c
 @@ -108,7 +108,7 @@ static void *vsyscall_getcpu(void)
@@ -151,7 +151,7 @@ index 5fb97ad67eea..da651cf53c6c 100644
  	void *vdso = dlopen("linux-vdso.so.1",
  			    RTLD_LAZY | RTLD_LOCAL | RTLD_NOLOAD);
 diff --git a/tools/testing/selftests/vDSO/vdso_test_getrandom.c b/tools/testing/selftests/vDSO/vdso_test_getrandom.c
-index 95057f7567db..dd1132508a0d 100644
+index 95057f7567db22226d9cb09a667a56e387a33a46..dd1132508a0db29a32ec977b30f64b20aa43e03d 100644
 --- a/tools/testing/selftests/vDSO/vdso_test_getrandom.c
 +++ b/tools/testing/selftests/vDSO/vdso_test_getrandom.c
 @@ -21,7 +21,6 @@

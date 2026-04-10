@@ -3,7 +3,7 @@
 
 diff --git a/src/x11.Keysym.zig b/src/x11.Keysym.zig
 new file mode 100644
-index 0000000..e237a22
+index 0000000000000000000000000000000000000000..e237a22bbc214f03dfa0a99ecd3368eee2bbc22c
 --- /dev/null
 +++ b/src/x11.Keysym.zig
 @@ -0,0 +1,2141 @@
@@ -2149,7 +2149,7 @@ index 0000000..e237a22
 +    XK_Sinh_kunddaliya = 0x1000df4, // U+0DF4 SINHALA PUNCTUATION KUNDDALIYA
 +};
 diff --git a/src/x11.zig b/src/x11.zig
-index 9b8cbd2..a0a2cf4 100644
+index 9b8cbd2d7cee62cdec69e8febc75ff090cefdd8c..a0a2cf47cd45489c5630a351b553aaeae5efad87 100644
 --- a/src/x11.zig
 +++ b/src/x11.zig
 @@ -37,3 +37,5 @@ pub const EventType = enum(c_int) {

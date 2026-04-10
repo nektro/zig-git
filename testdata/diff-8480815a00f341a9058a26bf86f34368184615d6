@@ -1,7 +1,7 @@
 :100644 100644 fef6239d0dfd8daafcfd62a17a137e3da9c2d8dd 9f1d9c9b30f503c1a0731f31c8b6892990b65746 M	notes/potential apps.txt
 
 diff --git a/notes/potential apps.txt b/notes/potential apps.txt
-index fef6239..9f1d9c9 100644
+index fef6239d0dfd8daafcfd62a17a137e3da9c2d8dd..9f1d9c9b30f503c1a0731f31c8b6892990b65746 100644
 --- a/notes/potential apps.txt	
 +++ b/notes/potential apps.txt	
 @@ -116,10 +116,18 @@ system utilities

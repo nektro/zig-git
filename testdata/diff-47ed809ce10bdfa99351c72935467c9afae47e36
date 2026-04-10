@@ -7,14 +7,14 @@
 :100644 100644 8885fcc94eca961702dc7e7f7dff2f67328dd3e1 9e2be559f6ca6d5c4e1ce86858587db3a68c5c27 M	test/layout/demo-menubar.txt
 
 diff --git a/Cozette/.version b/Cozette/.version
-index 6fee2fe..49e0a31 100644
+index 6fee2fedb0a46b84e4cbb6e32f9ca5af821b2b67..49e0a31d4964dca501ce61740340bf8058821781 100644
 --- a/Cozette/.version
 +++ b/Cozette/.version
 @@ -1 +1 @@
 -1.22.2
 +1.23.1
 diff --git a/Cozette/cozette.bdf b/Cozette/cozette.bdf
-index 9371252..fdbcc86 100644
+index 9371252d0bfb5b2ee220f63dbd1431d11abe266a..fdbcc86d16227019361b52ab614b3d9667bd48f7 100644
 --- a/Cozette/cozette.bdf
 +++ b/Cozette/cozette.bdf
 @@ -1,7 +1,7 @@
@@ -2284,7 +2284,7 @@ index 9371252..fdbcc86 100644
 +ENDCHAR
  ENDFONT
 diff --git a/src/e/Label.zig b/src/e/Label.zig
-index 1d2119c..8330936 100644
+index 1d2119c3c794f127a5b366d8db1015dcb6c21e1a..83309362d0d4efa1f7c4a70ef66f2c91d1606b97 100644
 --- a/src/e/Label.zig
 +++ b/src/e/Label.zig
 @@ -113,7 +113,7 @@ pub fn handleMessage(app: *root.App, ele: mag.Element, msg: mag.Message, extra:
@@ -2297,13 +2297,13 @@ index 1d2119c..8330936 100644
          },
          .enter => {},
 diff --git a/test/images/demo-bdf-cozette.png b/test/images/demo-bdf-cozette.png
-index 0110829..c669969 100644
+index 0110829e4de23a2c4f1ae0e66958dfe9ca0fe9ff..c669969722abb19329aca3b91037ecc6ae7965ef 100644
 Binary files a/test/images/demo-bdf-cozette.png and b/test/images/demo-bdf-cozette.png differ
 diff --git a/test/images/demo-menubar.png b/test/images/demo-menubar.png
-index dedbfa8..e0e4649 100644
+index dedbfa87fb441cf6f8aee13537b8654dc18ac38e..e0e46496176d0dc5aaa70a4d95837212dd2cf3d7 100644
 Binary files a/test/images/demo-menubar.png and b/test/images/demo-menubar.png differ
 diff --git a/test/layout/demo-bdf-cozette.txt b/test/layout/demo-bdf-cozette.txt
-index 94df342..5d33be2 100644
+index 94df3421d8f57f38e11f8dc592c6eb123f287d23..5d33be25f2c4e5950780859892cb73b6a3c31e23 100644
 --- a/test/layout/demo-bdf-cozette.txt
 +++ b/test/layout/demo-bdf-cozette.txt
 @@ -1,13 +1,13 @@
@@ -2332,7 +2332,7 @@ index 94df342..5d33be2 100644
 +  11 e.Label @ [352,448,167,180] margin=[0,0,0,0] border=[0,0,0,0] padding=[0,0,0,0] bounds=[352,448,167,180] bg_color=null
 +  12 e.Label @ [352,448,180,193] margin=[0,0,0,0] border=[0,0,0,0] padding=[0,0,0,0] bounds=[352,448,180,193] bg_color=null
 diff --git a/test/layout/demo-menubar.txt b/test/layout/demo-menubar.txt
-index 8885fcc..9e2be55 100644
+index 8885fcc94eca961702dc7e7f7dff2f67328dd3e1..9e2be559f6ca6d5c4e1ce86858587db3a68c5c27 100644
 --- a/test/layout/demo-menubar.txt
 +++ b/test/layout/demo-menubar.txt
 @@ -1,24 +1,24 @@

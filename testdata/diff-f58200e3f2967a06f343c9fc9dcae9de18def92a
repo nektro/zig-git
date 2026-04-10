@@ -45,7 +45,7 @@
 :100644 100644 5c5d3329750eadc813f892bce6e05234ad563242 3bcae1cd211281cc29d4b970240174c40613fdd6 M	test/incremental/type_becomes_comptime_only
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 41bc62cead..d21ea2791c 100644
+index 41bc62cead176f9307835337b00615e2e1f74f6b..d21ea2791c62f3b912f586e56882346c00321647 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -583,6 +583,7 @@ set(ZIG_STAGE2_SOURCES
@@ -65,7 +65,7 @@ index 41bc62cead..d21ea2791c 100644
      src/link/StringTable.zig
      src/link/Wasm.zig
 diff --git a/build.zig b/build.zig
-index 0466b79bf2..e8d54cc0cd 100644
+index 0466b79bf2dbeb803d653eff2f2a48880da3669b..e8d54cc0cd314cc8a7e8e2cf2fb1c20106b33078 100644
 --- a/build.zig
 +++ b/build.zig
 @@ -202,6 +202,7 @@ pub fn build(b: *std.Build) !void {
@@ -80,7 +80,7 @@ diff --git a/ci/x86_64-linux-debug-llvm.sh b/ci/x86_64-linux-debug-llvm.sh
 old mode 100644
 new mode 100755
 diff --git a/lib/compiler_rt/fma.zig b/lib/compiler_rt/fma.zig
-index 578139c5ac..79a120d5a2 100644
+index 578139c5ac08a4d7eb4e298ea3354e4b9c1ee72d..79a120d5a2ccdde4c037297e677420b065a24b04 100644
 --- a/lib/compiler_rt/fma.zig
 +++ b/lib/compiler_rt/fma.zig
 @@ -203,7 +203,7 @@ fn add_adjusted(a: f64, b: f64) f64 {
@@ -120,7 +120,7 @@ index 578139c5ac..79a120d5a2 100644
          }
      }
 diff --git a/lib/std/Build/Step/Compile.zig b/lib/std/Build/Step/Compile.zig
-index dad60b725b..0f47a0b647 100644
+index dad60b725bc267a906e5c88abeb1ee342f818160..0f47a0b64781e423ec680cb162eb33e3ec51eddb 100644
 --- a/lib/std/Build/Step/Compile.zig
 +++ b/lib/std/Build/Step/Compile.zig
 @@ -192,6 +192,7 @@ want_lto: ?bool = null,
@@ -148,7 +148,7 @@ index dad60b725b..0f47a0b647 100644
      if (compile.root_module.resolved_target.?.query.ofmt) |ofmt| {
          try zig_args.append(try std.fmt.allocPrint(arena, "-ofmt={s}", .{@tagName(ofmt)}));
 diff --git a/lib/std/elf.zig b/lib/std/elf.zig
-index bef80d782b..43b542c09e 100644
+index bef80d782b20e759701c73a3fe85909985415f42..43b542c09e047ff0ae723f710750f396e18bbf08 100644
 --- a/lib/std/elf.zig
 +++ b/lib/std/elf.zig
 @@ -323,6 +323,8 @@ pub const PT_LOPROC = 0x70000000;
@@ -919,7 +919,7 @@ index bef80d782b..43b542c09e 100644
      /// Member file name, sometimes / terminated.
      ar_name: [16]u8,
 diff --git a/lib/std/zig/system.zig b/lib/std/zig/system.zig
-index b2116c1a74..55f1fd14cb 100644
+index b2116c1a7429b5791d8e39d66dd7e66ad64337e0..55f1fd14cb6cfa8421a142a142802710c9944bd5 100644
 --- a/lib/std/zig/system.zig
 +++ b/lib/std/zig/system.zig
 @@ -516,15 +516,15 @@ pub fn abiAndDynamicLinkerFromFile(
@@ -961,7 +961,7 @@ index b2116c1a74..55f1fd14cb 100644
          elf.ELFCLASS64 => true,
          else => return error.InvalidElfClass,
 diff --git a/src/Compilation.zig b/src/Compilation.zig
-index 34953ed11a..bf7246b8d8 100644
+index 34953ed11a12e334a1ecd995de399421a896a5bb..bf7246b8d8b8fe3df2c4ac1c4fb6124fe55e134b 100644
 --- a/src/Compilation.zig
 +++ b/src/Compilation.zig
 @@ -177,7 +177,6 @@ debug_compiler_runtime_libs: bool,
@@ -1107,7 +1107,7 @@ index 34953ed11a..bf7246b8d8 100644
              defer update_zir_refs_node.end();
              try pt.updateZirRefs();
 diff --git a/src/Compilation/Config.zig b/src/Compilation/Config.zig
-index d8751251da..45f7e509de 100644
+index d8751251da9e24db98c79f7964e0ea1a9bde78c8..45f7e509de609a4ab10651d27e49a1cb645eb2b6 100644
 --- a/src/Compilation/Config.zig
 +++ b/src/Compilation/Config.zig
 @@ -49,6 +49,8 @@ use_lib_llvm: bool,
@@ -1170,7 +1170,7 @@ index d8751251da..45f7e509de 100644
          .export_memory = export_memory,
          .shared_memory = shared_memory,
 diff --git a/src/InternPool.zig b/src/InternPool.zig
-index 9965497742..f4344af86d 100644
+index 996549774294455b642ef3286d3d20be0bd404f5..f4344af86d46be017beacf31e90c581493517b0f 100644
 --- a/src/InternPool.zig
 +++ b/src/InternPool.zig
 @@ -6424,14 +6424,25 @@ pub const Alignment = enum(u6) {
@@ -1204,7 +1204,7 @@ index 9965497742..f4344af86d 100644
  };
  
 diff --git a/src/Sema.zig b/src/Sema.zig
-index 946e890ea3..d0576de33d 100644
+index 946e890ea3566e0cc1ab2aae453d389ecfab702b..d0576de33d4d3077f7fa177ba4e0b8e9b438ee69 100644
 --- a/src/Sema.zig
 +++ b/src/Sema.zig
 @@ -3032,7 +3032,7 @@ fn zirStructDecl(
@@ -1280,7 +1280,7 @@ index 946e890ea3..d0576de33d 100644
      const gop = try sema.dependencies.getOrPut(sema.gpa, dependee);
      if (gop.found_existing) return;
 diff --git a/src/Value.zig b/src/Value.zig
-index 8de5621761..381eacf45a 100644
+index 8de562176107ae28fb15ce2e6ed241aa7f176e16..381eacf45ab2389c950aad0dd9f0ed886e9a8bcb 100644
 --- a/src/Value.zig
 +++ b/src/Value.zig
 @@ -23,7 +23,7 @@ pub fn format(val: Value, writer: *std.Io.Writer) !void {
@@ -1293,7 +1293,7 @@ index 8de5621761..381eacf45a 100644
  }
  
 diff --git a/src/Zcu.zig b/src/Zcu.zig
-index 706bdb5165..8e9e9c2902 100644
+index 706bdb51655409a6e2c23e36d580d0c81c01f350..8e9e9c29025c4e82af1d14ece0eca9b7d9bd06e4 100644
 --- a/src/Zcu.zig
 +++ b/src/Zcu.zig
 @@ -3166,7 +3166,7 @@ fn markTransitiveDependersPotentiallyOutdated(zcu: *Zcu, maybe_outdated: AnalUni
@@ -1306,7 +1306,7 @@ index 706bdb5165..8e9e9c2902 100644
      if (zcu.outdated.count() == 0) {
          // Any units in `potentially_outdated` must just be stuck in loops with one another: none of those
 diff --git a/src/Zcu/PerThread.zig b/src/Zcu/PerThread.zig
-index 77cddb204e..32782e7e89 100644
+index 77cddb204e82eeeba3b349b0ed2216974d06f14c..32782e7e8952462d2991ff0b3bf3bbe8e0b72c64 100644
 --- a/src/Zcu/PerThread.zig
 +++ b/src/Zcu/PerThread.zig
 @@ -1815,7 +1815,7 @@ fn createFileRootStruct(
@@ -1319,7 +1319,7 @@ index 77cddb204e..32782e7e89 100644
      }
  
 diff --git a/src/arch/riscv64/CodeGen.zig b/src/arch/riscv64/CodeGen.zig
-index 7b13cfc90d..fe40ba4bbb 100644
+index 7b13cfc90d68b760251c236bd43890858a088dd9..fe40ba4bbb16ffcbcc2768af9a6f8a57600c1e4f 100644
 --- a/src/arch/riscv64/CodeGen.zig
 +++ b/src/arch/riscv64/CodeGen.zig
 @@ -858,9 +858,11 @@ pub fn generateLazy(
@@ -1346,7 +1346,7 @@ index 7b13cfc90d..fe40ba4bbb 100644
          .prev_di_line = undefined, // no debug info yet
          .prev_di_column = undefined, // no debug info yet
 diff --git a/src/arch/riscv64/Emit.zig b/src/arch/riscv64/Emit.zig
-index 2e72aff941..64a476007c 100644
+index 2e72aff941072c7e5d7164eace99b5d919dc4ece..64a476007cf9881e5101c5c945158252b1ba5b86 100644
 --- a/src/arch/riscv64/Emit.zig
 +++ b/src/arch/riscv64/Emit.zig
 @@ -3,7 +3,7 @@
@@ -1412,7 +1412,7 @@ index 2e72aff941..64a476007c 100644
          .none => {},
      }
 diff --git a/src/arch/riscv64/Mir.zig b/src/arch/riscv64/Mir.zig
-index 6fb8e23a98..204ab6a3c0 100644
+index 6fb8e23a98c3b0e89ee5139429fc11626fb2ecc7..204ab6a3c06226635b1619b60c205f02f8447884 100644
 --- a/src/arch/riscv64/Mir.zig
 +++ b/src/arch/riscv64/Mir.zig
 @@ -109,9 +109,11 @@ pub fn emit(
@@ -1439,7 +1439,7 @@ index 6fb8e23a98..204ab6a3c0 100644
          .prev_di_line = func.lbrace_line,
          .prev_di_column = func.lbrace_column,
 diff --git a/src/arch/sparc64/Emit.zig b/src/arch/sparc64/Emit.zig
-index d41f1cdf07..26282b09ab 100644
+index d41f1cdf07aa54b3c55a9917826a7b55a7da23b0..26282b09ab4f5c831cea32e9c9dbf8d6e0b2256a 100644
 --- a/src/arch/sparc64/Emit.zig
 +++ b/src/arch/sparc64/Emit.zig
 @@ -21,7 +21,7 @@ debug_output: link.File.DebugInfoOutput,
@@ -1510,7 +1510,7 @@ index d41f1cdf07..26282b09ab 100644
 +    try emit.w.writeInt(u32, instruction.toU32(), .big);
  }
 diff --git a/src/arch/sparc64/Mir.zig b/src/arch/sparc64/Mir.zig
-index 842ac10fed..41d135eb83 100644
+index 842ac10fed1af8fbaeadb7b2c0404a20f806abc0..41d135eb831fefe51afd3fde7925596fce9d441b 100644
 --- a/src/arch/sparc64/Mir.zig
 +++ b/src/arch/sparc64/Mir.zig
 @@ -380,9 +380,11 @@ pub fn emit(
@@ -1537,7 +1537,7 @@ index 842ac10fed..41d135eb83 100644
          .prev_di_line = func.lbrace_line,
          .prev_di_column = func.lbrace_column,
 diff --git a/src/arch/x86_64/CodeGen.zig b/src/arch/x86_64/CodeGen.zig
-index b5760c95ac..1827b50d61 100644
+index b5760c95ac2b54f5e03c32e3d61a4c32e01f3a46..1827b50d61a06e05f525461fb8261922f36920bf 100644
 --- a/src/arch/x86_64/CodeGen.zig
 +++ b/src/arch/x86_64/CodeGen.zig
 @@ -550,9 +550,9 @@ pub const MCValue = union(enum) {
@@ -1595,7 +1595,7 @@ index b5760c95ac..1827b50d61 100644
              else => unreachable,
          }
 diff --git a/src/arch/x86_64/Emit.zig b/src/arch/x86_64/Emit.zig
-index 84bb325322..c2b38d8e6d 100644
+index 84bb325322ac20c100da1e85c715a99f7e251deb..c2b38d8e6d45b3439d2f8bb6cf9e518ac17784cc 100644
 --- a/src/arch/x86_64/Emit.zig
 +++ b/src/arch/x86_64/Emit.zig
 @@ -6,7 +6,7 @@ pt: Zcu.PerThread,
@@ -1866,7 +1866,7 @@ index 84bb325322..c2b38d8e6d 100644
          .none => {},
      }
 diff --git a/src/arch/x86_64/Mir.zig b/src/arch/x86_64/Mir.zig
-index e70018850d..caf41ffb39 100644
+index e70018850d621aff1a360044014f1ea1e8516a44..caf41ffb392d07b8a455f09181c77ffb8a679d7e 100644
 --- a/src/arch/x86_64/Mir.zig
 +++ b/src/arch/x86_64/Mir.zig
 @@ -1976,7 +1976,8 @@ pub fn emit(
@@ -1933,7 +1933,7 @@ index e70018850d..caf41ffb39 100644
          .prev_di_loc = undefined,
          .prev_di_pc = undefined,
 diff --git a/src/arch/x86_64/bits.zig b/src/arch/x86_64/bits.zig
-index 835093d11a..0504810933 100644
+index 835093d11ab8d38f622252233101c1a3c9d8904d..05048109335e0256d91c5f350d7fa900ce08e402 100644
 --- a/src/arch/x86_64/bits.zig
 +++ b/src/arch/x86_64/bits.zig
 @@ -727,6 +727,14 @@ pub const FrameIndex = enum(u32) {
@@ -1952,7 +1952,7 @@ index 835093d11a..0504810933 100644
  
  pub const FrameAddr = struct { index: FrameIndex, off: i32 = 0 };
 diff --git a/src/arch/x86_64/encoder.zig b/src/arch/x86_64/encoder.zig
-index 03ff7134f6..1d9c67175e 100644
+index 03ff7134f62d04025081f06b50248545433130ec..1d9c67175ef204933a5463393cad189d0e59e7fa 100644
 --- a/src/arch/x86_64/encoder.zig
 +++ b/src/arch/x86_64/encoder.zig
 @@ -259,7 +259,7 @@ pub const Instruction = struct {
@@ -1965,7 +1965,7 @@ index 03ff7134f6..1d9c67175e 100644
                                  .rip_inst => |inst_index| try w.print("RipInst({d})", .{inst_index}),
                                  .nav => |nav| try w.print("Nav({d})", .{@intFromEnum(nav)}),
 diff --git a/src/codegen.zig b/src/codegen.zig
-index 56e6e7c99f..4cbf3f5616 100644
+index 56e6e7c99fb3bd8208ce92e912c03f3d2404f2c1..4cbf3f56169ec9227f961a72720898cc23df3f96 100644
 --- a/src/codegen.zig
 +++ b/src/codegen.zig
 @@ -6,7 +6,6 @@ const link = @import("link.zig");
@@ -2673,7 +2673,7 @@ index 56e6e7c99f..4cbf3f5616 100644
          const zo = macho_file.getZigObject().?;
          switch (linkage) {
 diff --git a/src/codegen/aarch64/Mir.zig b/src/codegen/aarch64/Mir.zig
-index 318a51da95..be6478eae8 100644
+index 318a51da95bfe1c047447f96cde8a83f993c9f80..be6478eae896f3d70d874e609d3c3d263946872a 100644
 --- a/src/codegen/aarch64/Mir.zig
 +++ b/src/codegen/aarch64/Mir.zig
 @@ -56,13 +56,13 @@ pub fn emit(
@@ -2842,7 +2842,7 @@ index 318a51da95..be6478eae8 100644
                  .tag = .@"extern",
                  .offset = offset,
 diff --git a/src/dev.zig b/src/dev.zig
-index ac30cedecd..266796a2dc 100644
+index ac30cedecd8318da8f38e96e45d763fc2d70bc1f..266796a2dc2dda022bd7c4c3027c950a446d9dc9 100644
 --- a/src/dev.zig
 +++ b/src/dev.zig
 @@ -97,6 +97,7 @@ pub const Env = enum {
@@ -2878,7 +2878,7 @@ index ac30cedecd..266796a2dc 100644
      c_linker,
      wasm_linker,
 diff --git a/src/link.zig b/src/link.zig
-index 27cd6620e3..277013efb3 100644
+index 27cd6620e359284f0a6398aa23a5f8ade66446d7..277013efb3094cee331db13b15fd1e5d2d08d7e4 100644
 --- a/src/link.zig
 +++ b/src/link.zig
 @@ -219,6 +219,7 @@ pub const Diags = struct {
@@ -3092,7 +3092,7 @@ index 27cd6620e3..277013efb3 100644
  /// Provided by the CLI, processed into `LinkInput` instances at the start of
  /// the compilation pipeline.
 diff --git a/src/link/Coff.zig b/src/link/Coff.zig
-index e016473531..f3e3b3d0b5 100644
+index e016473531aede3998c41f42a85745fbf017c63c..f3e3b3d0b530d498f1b8d4518c1d9c06d4a69baa 100644
 --- a/src/link/Coff.zig
 +++ b/src/link/Coff.zig
 @@ -953,7 +953,7 @@ fn writeOffsetTableEntry(coff: *Coff, index: usize) !void {
@@ -3268,7 +3268,7 @@ index e016473531..f3e3b3d0b5 100644
          try coff.resolveGlobalSymbol(sym_loc);
      }
 diff --git a/src/link/Dwarf.zig b/src/link/Dwarf.zig
-index f4af5f4148..595e3583d5 100644
+index f4af5f4148ad11f2eeb0688ccd11a39120404d6b..595e3583d5d540bdd0fe0ce1727d0a25eed72f50 100644
 --- a/src/link/Dwarf.zig
 +++ b/src/link/Dwarf.zig
 @@ -2126,19 +2126,22 @@ pub const WipNav = struct {
@@ -3310,7 +3310,7 @@ index f4af5f4148..595e3583d5 100644
  
  const Allocator = std.mem.Allocator;
 diff --git a/src/link/Elf/LinkerDefined.zig b/src/link/Elf/LinkerDefined.zig
-index b74406c368..d7e3cf62f3 100644
+index b74406c368d5cc4eb3da41365236bc79387bf7c2..d7e3cf62f3a378970682797fb538227d9c70795d 100644
 --- a/src/link/Elf/LinkerDefined.zig
 +++ b/src/link/Elf/LinkerDefined.zig
 @@ -47,7 +47,7 @@ fn newSymbolAssumeCapacity(self: *LinkerDefined, name_off: u32, elf_file: *Elf)
@@ -3323,7 +3323,7 @@ index b74406c368..d7e3cf62f3 100644
          .st_shndx = elf.SHN_ABS,
          .st_value = 0,
 diff --git a/src/link/Elf/SharedObject.zig b/src/link/Elf/SharedObject.zig
-index 8c79def16b..4dce40e370 100644
+index 8c79def16bff14a9878ab22cea2ee6e1aca7c160..4dce40e37094e9a48db41d35ce189af38b63c287 100644
 --- a/src/link/Elf/SharedObject.zig
 +++ b/src/link/Elf/SharedObject.zig
 @@ -105,7 +105,7 @@ pub fn parseHeader(
@@ -3336,7 +3336,7 @@ index 8c79def16b..4dce40e370 100644
  
      if (target.toElfMachine() != ehdr.e_machine)
 diff --git a/src/link/Elf/ZigObject.zig b/src/link/Elf/ZigObject.zig
-index bf65d04e4a..a3ede11dc4 100644
+index bf65d04e4a13b3980749bfcc1af24f52d4ac3b49..a3ede11dc4003cd0f9d1f671dfccc5c095b16a82 100644
 --- a/src/link/Elf/ZigObject.zig
 +++ b/src/link/Elf/ZigObject.zig
 @@ -277,8 +277,8 @@ pub fn flush(self: *ZigObject, elf_file: *Elf, tid: Zcu.PerThread.Id) !void {
@@ -3496,7 +3496,7 @@ index bf65d04e4a..a3ede11dc4 100644
      const local_esym = &self.symtab.items(.elf_sym)[local_sym.esym_index];
 diff --git a/src/link/Elf2.zig b/src/link/Elf2.zig
 new file mode 100644
-index 0000000000..e43ebf2639
+index 0000000000000000000000000000000000000000..e43ebf2639ad88db8d125d2a79877173d771f73d
 --- /dev/null
 +++ b/src/link/Elf2.zig
 @@ -0,0 +1,2036 @@
@@ -5537,7 +5537,7 @@ index 0000000000..e43ebf2639
 +const Value = @import("../Value.zig");
 +const Zcu = @import("../Zcu.zig");
 diff --git a/src/link/MachO/ZigObject.zig b/src/link/MachO/ZigObject.zig
-index b1fc6528d5..5a0a71f380 100644
+index b1fc6528d5808663942b0428869f0c72efda1931..5a0a71f380c8a83c66b4f4e5391e4ec54469033e 100644
 --- a/src/link/MachO/ZigObject.zig
 +++ b/src/link/MachO/ZigObject.zig
 @@ -784,22 +784,26 @@ pub fn updateFunc(
@@ -5662,7 +5662,7 @@ index b1fc6528d5..5a0a71f380 100644
          .code => macho_file.zig_text_sect_index.?,
 diff --git a/src/link/MappedFile.zig b/src/link/MappedFile.zig
 new file mode 100644
-index 0000000000..d04a8d533a
+index 0000000000000000000000000000000000000000..d04a8d533a03f8934a8546311007b867bde353d0
 --- /dev/null
 +++ b/src/link/MappedFile.zig
 @@ -0,0 +1,929 @@
@@ -6596,7 +6596,7 @@ index 0000000000..d04a8d533a
 +const std = @import("std");
 +const windows = std.os.windows;
 diff --git a/src/link/Queue.zig b/src/link/Queue.zig
-index 9f4535e1fe..742b4664f1 100644
+index 9f4535e1fe4ef7c6458ee94b571b4157ba422dc8..742b4664f178955b4668f130ebbacab0b9ac2550 100644
 --- a/src/link/Queue.zig
 +++ b/src/link/Queue.zig
 @@ -22,17 +22,17 @@ prelink_wait_count: u32,
@@ -6741,7 +6741,7 @@ index 9f4535e1fe..742b4664f1 100644
  }
  
 diff --git a/src/link/Wasm.zig b/src/link/Wasm.zig
-index a125a70aae..d60b91c30f 100644
+index a125a70aae790e7b750c96304bae1bdb3c86376c..d60b91c30f93695076b8299c7e92d8f734812d32 100644
 --- a/src/link/Wasm.zig
 +++ b/src/link/Wasm.zig
 @@ -4257,7 +4257,14 @@ fn lowerZcuData(wasm: *Wasm, pt: Zcu.PerThread, ip_index: InternPool.Index) !Zcu
@@ -6761,7 +6761,7 @@ index a125a70aae..d60b91c30f 100644
      const code_len: u32 = @intCast(wasm.string_bytes.items.len - code_start);
      const relocs_len: u32 = @intCast(wasm.out_relocs.len - relocs_start);
 diff --git a/src/main.zig b/src/main.zig
-index 26d44c4463..9d43e47ea2 100644
+index 26d44c4463be802e0e7dea899980b28010b8ffc7..9d43e47ea2dbd949122ab7abfdf285ade21bc987 100644
 --- a/src/main.zig
 +++ b/src/main.zig
 @@ -904,7 +904,6 @@ fn buildOutputType(
@@ -6822,7 +6822,7 @@ index 26d44c4463..9d43e47ea2 100644
      }
  
 diff --git a/src/target.zig b/src/target.zig
-index e999d2ae22..1cf5c9b082 100644
+index e999d2ae22663bcd84a9eb1fc112a317b12a9c02..1cf5c9b08274a55f6cd956ae433e4fb7141e1abd 100644
 --- a/src/target.zig
 +++ b/src/target.zig
 @@ -231,6 +231,13 @@ pub fn hasLldSupport(ofmt: std.Target.ObjectFormat) bool {
@@ -6840,7 +6840,7 @@ index e999d2ae22..1cf5c9b082 100644
  /// Used to select between LLVM backend and self-hosted backend when compiling in
  /// debug mode. A given target should only return true here if it is passing greater
 diff --git a/test/incremental/change_exports b/test/incremental/change_exports
-index 01605bdeeb..e492930031 100644
+index 01605bdeeb36e4d51e986526e94c9a36e2cf07fa..e492930031e7fb5d22d68402bc3e59299a084402 100644
 --- a/test/incremental/change_exports
 +++ b/test/incremental/change_exports
 @@ -1,4 +1,4 @@
@@ -6850,7 +6850,7 @@ index 01605bdeeb..e492930031 100644
  #target=x86_64-windows-cbe
  
 diff --git a/test/incremental/change_panic_handler b/test/incremental/change_panic_handler
-index 3e400b854e..699134100e 100644
+index 3e400b854eb60b4a81a3c9b2f0e3511e11ec3b26..699134100eec6942bc2414d29ab7188332f3a45a 100644
 --- a/test/incremental/change_panic_handler
 +++ b/test/incremental/change_panic_handler
 @@ -1,3 +1,4 @@
@@ -6859,7 +6859,7 @@ index 3e400b854e..699134100e 100644
  #target=x86_64-windows-cbe
  #update=initial version
 diff --git a/test/incremental/change_panic_handler_explicit b/test/incremental/change_panic_handler_explicit
-index 9f7eb6c12f..2d068d593e 100644
+index 9f7eb6c12f10b42d80e998f352ac9a0a1d5d0842..2d068d593eeb77a07b9c249fc0d7542f1cee4c6c 100644
 --- a/test/incremental/change_panic_handler_explicit
 +++ b/test/incremental/change_panic_handler_explicit
 @@ -1,3 +1,4 @@
@@ -6868,7 +6868,7 @@ index 9f7eb6c12f..2d068d593e 100644
  #target=x86_64-windows-cbe
  #update=initial version
 diff --git a/test/incremental/change_struct_same_fields b/test/incremental/change_struct_same_fields
-index 97049a1fc0..f3bfbbdd69 100644
+index 97049a1fc03ae2d9dfbdd07e6c06a9e756f133aa..f3bfbbdd6922a0266e42c41f8e92cc96e15bc9fc 100644
 --- a/test/incremental/change_struct_same_fields
 +++ b/test/incremental/change_struct_same_fields
 @@ -1,4 +1,4 @@
@@ -6878,7 +6878,7 @@ index 97049a1fc0..f3bfbbdd69 100644
  #target=x86_64-windows-cbe
  #target=wasm32-wasi-selfhosted
 diff --git a/test/incremental/type_becomes_comptime_only b/test/incremental/type_becomes_comptime_only
-index 5c5d332975..3bcae1cd21 100644
+index 5c5d3329750eadc813f892bce6e05234ad563242..3bcae1cd211281cc29d4b970240174c40613fdd6 100644
 --- a/test/incremental/type_becomes_comptime_only
 +++ b/test/incremental/type_becomes_comptime_only
 @@ -1,3 +1,4 @@
