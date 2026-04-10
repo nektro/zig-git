@@ -980,6 +980,7 @@ pub const Repository = struct {
     pack_content: std.StringArrayHashMapUnmanaged([]const u8),
     commits: std.StringArrayHashMapUnmanaged(Commit),
     trees: std.StringArrayHashMapUnmanaged(Tree),
+    tags: std.StringArrayHashMapUnmanaged(Tag),
 
     pub fn init(gitdir: nfs.Dir, gpa: std.mem.Allocator) Repository {
         return .{
@@ -990,6 +991,7 @@ pub const Repository = struct {
             .pack_content = .empty,
             .commits = .empty,
             .trees = .empty,
+            .tags = .empty,
         };
     }
 
@@ -1003,6 +1005,7 @@ pub const Repository = struct {
         r.commits.deinit(r.gpa);
         for (r.trees.values()) |v| r.gpa.free(v.children);
         r.trees.deinit(r.gpa);
+        r.tags.deinit(r.gpa);
     }
 
     fn getObject(r: *Repository, obj: Id, arena: std.mem.Allocator) !?[]const u8 {
@@ -1142,7 +1145,7 @@ pub const Repository = struct {
         return null;
     }
 
-    fn getGitObject(r: *Repository, obj: Id, arena: std.mem.Allocator) !?GitObject {
+    pub fn getGitObject(r: *Repository, obj: Id, arena: std.mem.Allocator) !?GitObject {
         if (try r.getObject(obj, arena)) |data| {
             const header = data[0..std.mem.indexOfScalar(u8, data, 0).?];
             const _type = header[0..std.mem.indexOfScalar(u8, header, ' ').?];
@@ -1217,6 +1220,20 @@ pub const Repository = struct {
                 const tree: Tree = .{ .children = try children.toOwnedSlice() };
                 try r.trees.put(r.gpa, id.id, tree);
                 return .{ id, tree };
+            }
+        }
+        return null;
+    }
+
+    pub fn getTag(r: *Repository, arena: std.mem.Allocator, id: TagId) !?struct { TagId, Tag } {
+        if (r.tags.getPtr(id.id)) |val| {
+            return .{ id, val.* };
+        }
+        if (try r.getGitObject(id.id, arena)) |obj| {
+            if (obj.type == .tag) {
+                const tag = try parseTag(obj.content);
+                try r.tags.put(r.gpa, id.id, tag);
+                return .{ id, tag };
             }
         }
         return null;
