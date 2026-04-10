@@ -976,6 +976,8 @@ pub const Repository = struct {
     gitdir: nfs.Dir,
     gpa: std.mem.Allocator,
     raw_object_contents: std.StringArrayHashMapUnmanaged([]const u8),
+    idx_content: std.StringArrayHashMapUnmanaged([]const u8),
+    pack_content: std.StringArrayHashMapUnmanaged([]const u8),
     commits: std.StringArrayHashMapUnmanaged(Commit),
     trees: std.StringArrayHashMapUnmanaged(Tree),
 
@@ -984,6 +986,8 @@ pub const Repository = struct {
             .gitdir = gitdir,
             .gpa = gpa,
             .raw_object_contents = .empty,
+            .idx_content = .empty,
+            .pack_content = .empty,
             .commits = .empty,
             .trees = .empty,
         };
@@ -992,12 +996,16 @@ pub const Repository = struct {
     pub fn deinit(r: *Repository) void {
         for (r.raw_object_contents.values()) |v| r.gpa.free(v);
         r.raw_object_contents.deinit(r.gpa);
+        for (r.idx_content.values()) |v| nfs.munmap(v);
+        r.idx_content.deinit(r.gpa);
+        for (r.pack_content.values()) |v| nfs.munmap(v);
+        r.pack_content.deinit(r.gpa);
         r.commits.deinit(r.gpa);
         for (r.trees.values()) |v| r.gpa.free(v.children);
         r.trees.deinit(r.gpa);
     }
 
-    fn getObject(r: *Repository, obj: Id) !?[]const u8 {
+    fn getObject(r: *Repository, obj: Id, arena: std.mem.Allocator) !?[]const u8 {
         if (r.raw_object_contents.get(obj)) |content| {
             return content;
         }
@@ -1019,11 +1027,123 @@ pub const Repository = struct {
             try r.raw_object_contents.put(r.gpa, obj, content);
             return content;
         }
+
+        // read .idx
+        if (r.idx_content.count() == 0) {
+            const packdir = try r.gitdir.openDir("objects/pack", .{});
+            defer packdir.close();
+            var iter = packdir.iterate();
+            while (try iter.next()) |entry| {
+                if (entry.type != .REG) continue;
+                if (!std.mem.endsWith(u8, entry.name, ".idx")) continue;
+                std.log.debug("packdir iterate: {s}", .{entry.name});
+
+                const idx_file = try packdir.openFile(entry.name, .{});
+                defer idx_file.close();
+                const idx_content = try idx_file.mmap();
+                errdefer nfs.munmap(idx_content);
+                try r.idx_content.put(
+                    r.gpa,
+                    try arena.dupe(u8, entry.name),
+                    idx_content,
+                );
+            }
+        }
+        const pack_index, const pack_offset = blk: for (r.idx_content.keys(), r.idx_content.values()) |idx_path, idx_content| {
+            if (std.mem.startsWith(u8, idx_content, "\xfftOc")) {
+                std.debug.assert(std.mem.readInt(u32, idx_content[4..][0..4], .big) == 2);
+                const flfo_table_bytes = idx_content[8..][0 .. 256 * 4];
+                const object_count = std.mem.readInt(u32, flfo_table_bytes[255 * 4 ..][0..4], .big);
+                const name_bytes = idx_content[8..][1024..][0 .. object_count * 20];
+                const crc32_bytes = idx_content[8..][1024..][name_bytes.len..][0 .. object_count * 4];
+                const offset_bytes = idx_content[8..][1024..][name_bytes.len..][crc32_bytes.len..][0 .. object_count * 4];
+                for (0..object_count) |i| {
+                    const object_id = &extras.to_hex(name_bytes[i * 20 ..][0..20].*);
+                    const pack_offset = std.mem.readInt(u32, offset_bytes[i * 4 ..][0..4], .big);
+                    if (std.mem.eql(u8, object_id, obj)) {
+                        std.log.debug("found {s} in {s} at offset {d}", .{ obj, idx_path, pack_offset });
+                        const pack_index = r.pack_content.getIndex(idx_path) orelse clk: {
+                            var pack_path: [128]u8 = @splat(0);
+                            @memcpy(pack_path[0..13], "objects/pack/");
+                            @memcpy(pack_path[13..][0..idx_path.len], idx_path);
+                            @memcpy(pack_path[13..][idx_path.len - 4 ..][0..5], ".pack");
+                            const pack_name_nidx = std.mem.indexOfScalar(u8, &pack_path, 0).?;
+                            const pack_file = try r.gitdir.openFile(pack_path[0..pack_name_nidx :0], .{});
+                            defer pack_file.close();
+                            const pack_content = try pack_file.mmap();
+                            errdefer nfs.munmap(pack_content);
+                            try r.pack_content.put(r.gpa, idx_path, pack_content);
+                            break :clk r.pack_content.count() - 1;
+                        };
+                        break :blk .{ pack_index, pack_offset };
+                    }
+                }
+            } else {
+                return error.Version1Idx;
+            }
+        } else return null;
+
+        // parse .pack
+        std.log.warn("pack_index={d} pack_offset={d}", .{ pack_index, pack_offset });
+
+        const pack_content = r.pack_content.values()[pack_index];
+        if (!std.mem.eql(u8, pack_content[0..4], "PACK")) return error.InvalidGitPack;
+        const pack_version = std.mem.readInt(u32, pack_content[4..][0..4], .big);
+        switch (pack_version) {
+            2 => {
+                const packedobj_content = pack_content[pack_offset..];
+                // var packedobj_fbs = std.ArrayListUnmanaged(u8).initBuffer(packedobj_content);
+                var packedobj_fbs = nio.FixedBufferStream([]const u8).init(packedobj_content);
+
+                const PackedObjType = enum(u3) { none, commit, tree, blob, tag, reserved, ofs_delta, ref_delta };
+
+                var c: usize = packedobj_fbs.takeByte();
+                const ty: PackedObjType = @enumFromInt((c >> 4) & 7);
+                var size: usize = c & 15;
+                var shift: u6 = 4;
+                while (c & 0x80 > 0) {
+                    c = packedobj_fbs.takeByte();
+                    size += (c & 0x7f) << shift;
+                    shift += 7;
+                }
+                std.log.warn("type={s} size={d}", .{ @tagName(ty), size });
+
+                switch (ty) {
+                    .none, .reserved => {
+                        return null;
+                    },
+                    .commit, .tree, .blob, .tag => {
+                        const compressed_content = packedobj_fbs.rest()[0..size];
+                        var bufr = nio.FixedBufferStream([]const u8).init(compressed_content);
+                        var list: std.ArrayList(u8) = .init(r.gpa);
+                        errdefer list.deinit();
+                        try list.ensureUnusedCapacity(512);
+                        try list.appendSlice(@tagName(ty));
+                        try list.writer().print(" {d}\x00", .{size});
+                        try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
+                        const content = try list.toOwnedSlice();
+                        try r.raw_object_contents.put(r.gpa, obj, content);
+                        return content;
+                    },
+                    .ofs_delta => {
+                        return null;
+                    },
+                    .ref_delta => {
+                        return null;
+                    },
+                }
+                comptime unreachable;
+            },
+            3 => {
+                return error.ReservedPackVersion;
+            },
+            else => return error.InvalidGitPack,
+        }
         return null;
     }
 
     fn getGitObject(r: *Repository, obj: Id, arena: std.mem.Allocator) !?GitObject {
-        if (try r.getObject(obj)) |data| {
+        if (try r.getObject(obj, arena)) |data| {
             const header = data[0..std.mem.indexOfScalar(u8, data, 0).?];
             const _type = header[0..std.mem.indexOfScalar(u8, header, ' ').?];
             const content_len = try extras.parseDigits(u64, header[_type.len + 1 ..], 10);
