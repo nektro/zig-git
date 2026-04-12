@@ -917,20 +917,18 @@ pub const BlameIterator = struct {
 pub const Repository = struct {
     gitdir: nfs.Dir,
     gpa: std.mem.Allocator,
-    raw_object_contents: std.StringArrayHashMapUnmanaged(RawObject),
+    unpacked_objects: std.StringArrayHashMapUnmanaged(GitObject),
     idx_content: std.StringArrayHashMapUnmanaged([]const u8),
     pack_content: std.StringArrayHashMapUnmanaged([]const u8),
     commits: std.StringArrayHashMapUnmanaged(Commit),
     trees: std.StringArrayHashMapUnmanaged(Tree),
     tags: std.StringArrayHashMapUnmanaged(Tag),
 
-    const RawObject = struct { RefType, []const u8 };
-
     pub fn init(gitdir: nfs.Dir, gpa: std.mem.Allocator) Repository {
         return .{
             .gitdir = gitdir,
             .gpa = gpa,
-            .raw_object_contents = .empty,
+            .unpacked_objects = .empty,
             .idx_content = .empty,
             .pack_content = .empty,
             .commits = .empty,
@@ -940,8 +938,8 @@ pub const Repository = struct {
     }
 
     pub fn deinit(r: *Repository) void {
-        for (r.raw_object_contents.values()) |v| r.gpa.free(v[1]);
-        r.raw_object_contents.deinit(r.gpa);
+        for (r.unpacked_objects.values()) |v| r.gpa.free(v.content);
+        r.unpacked_objects.deinit(r.gpa);
         for (r.idx_content.values()) |v| nfs.munmap(v);
         r.idx_content.deinit(r.gpa);
         for (r.pack_content.values()) |v| nfs.munmap(v);
@@ -952,9 +950,9 @@ pub const Repository = struct {
         r.tags.deinit(r.gpa);
     }
 
-    fn getObject(r: *Repository, oid: Id, arena: std.mem.Allocator) !?RawObject {
-        if (r.raw_object_contents.get(oid)) |data| {
-            return data;
+    pub fn getObject(r: *Repository, arena: std.mem.Allocator, oid: Id) !?GitObject {
+        if (r.unpacked_objects.get(oid)) |obj| {
+            return obj;
         }
         if (oid.len == 40) blk: { //sha1 object
             var sub_path: [49:0]u8 = "objects/00/00000000000000000000000000000000000000".*;
@@ -978,8 +976,9 @@ pub const Repository = struct {
             list.replaceRangeAssumeCapacity(0, header.len + 1, "");
             const content = try list.toOwnedSlice();
             std.debug.assert(content.len == content_len);
-            try r.raw_object_contents.put(r.gpa, oid, .{ _type, content });
-            return .{ _type, content };
+            const obj: GitObject = .{ .type = _type, .content = content };
+            try r.unpacked_objects.put(r.gpa, oid, obj);
+            return obj;
         }
 
         // read .idx
@@ -1043,7 +1042,7 @@ pub const Repository = struct {
         return try r.getPackedObject(oid, pack_index, pack_offset);
     }
 
-    fn getPackedObject(r: *Repository, maybe_oid: ?Id, pack_index: usize, pack_offset: usize) !RawObject {
+    fn getPackedObject(r: *Repository, maybe_oid: ?Id, pack_index: usize, pack_offset: usize) !GitObject {
         const pack_content = r.pack_content.values()[pack_index];
         if (!std.mem.eql(u8, pack_content[0..4], "PACK")) return error.InvalidGitPack;
         const pack_version = std.mem.readInt(u32, pack_content[4..][0..4], .big);
@@ -1082,8 +1081,9 @@ pub const Repository = struct {
                         try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
                         const _type = std.meta.stringToEnum(RefType, @tagName(ty)).?;
                         const content = try list.toOwnedSlice();
-                        if (maybe_oid) |oid| try r.raw_object_contents.put(r.gpa, oid, .{ _type, content });
-                        return .{ _type, content };
+                        const obj: GitObject = .{ .type = _type, .content = content };
+                        if (maybe_oid) |oid| try r.unpacked_objects.put(r.gpa, oid, obj);
+                        return obj;
                     },
                     .ofs_delta => {
                         std.log.debug("type={s} size={d}", .{ @tagName(ty), size });
@@ -1103,14 +1103,6 @@ pub const Repository = struct {
         }
     }
 
-    pub fn getGitObject(r: *Repository, arena: std.mem.Allocator, oid: Id) !?GitObject {
-        if (try r.getObject(oid, arena)) |data| {
-            const _type, const content = data;
-            return .{ .type = _type, .content = content };
-        }
-        return null;
-    }
-
     const GitObject = struct {
         type: RefType,
         content: []const u8,
@@ -1120,7 +1112,7 @@ pub const Repository = struct {
         if (r.commits.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
-        if (try r.getGitObject(arena, id.id)) |obj| {
+        if (try r.getObject(arena, id.id)) |obj| {
             if (obj.type == .commit) {
                 const commit = try parseCommit(arena, obj.content);
                 try r.commits.put(r.gpa, id.id, commit);
@@ -1134,7 +1126,7 @@ pub const Repository = struct {
         if (r.trees.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
-        if (try r.getGitObject(arena, id.id)) |obj| {
+        if (try r.getObject(arena, id.id)) |obj| {
             if (obj.type == .tree) {
                 var children = std.ArrayList(Tree.Object).init(r.gpa);
                 errdefer children.deinit();
@@ -1181,7 +1173,7 @@ pub const Repository = struct {
         if (r.tags.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
-        if (try r.getGitObject(arena, id.id)) |obj| {
+        if (try r.getObject(arena, id.id)) |obj| {
             if (obj.type == .tag) {
                 const tag = try parseTag(obj.content);
                 try r.tags.put(r.gpa, id.id, tag);
