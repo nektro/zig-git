@@ -126,14 +126,14 @@ pub fn ensureObjId(comptime T: type, input: string) T {
 // TODO make this return a Reader when we implement it ourselves
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getObjectContent(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !string {
-    const t = tracer.trace(@src(), " {s}", .{obj});
+pub fn getObjectContent(alloc: std.mem.Allocator, dir: nfs.Dir, oid: Id) !string {
+    const t = tracer.trace(@src(), " {s}", .{oid});
     defer t.end();
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "cat-file", "-p", obj },
+        .argv = &.{ "git", "cat-file", "-p", oid },
         .max_output_bytes = 1024 * 1024 * 1024,
     });
     extras.assertLog(result.term == .Exited and result.term.Exited == 0, "{s}", .{result.stderr});
@@ -143,14 +143,14 @@ pub fn getObjectContent(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !string
 // TODO make this inspect .git/objects manually
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getObjectSize(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !u64 {
-    const t = tracer.trace(@src(), " {s}", .{obj});
+pub fn getObjectSize(alloc: std.mem.Allocator, dir: nfs.Dir, oid: Id) !u64 {
+    const t = tracer.trace(@src(), " {s}", .{oid});
     defer t.end();
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "cat-file", "-s", obj },
+        .argv = &.{ "git", "cat-file", "-s", oid },
     });
     extras.assertLog(result.term == .Exited and result.term.Exited == 0, "{s}", .{result.stderr});
     return try extras.parseDigits(u64, std.mem.trimRight(u8, result.stdout, "\n"), 10);
@@ -159,14 +159,14 @@ pub fn getObjectSize(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !u64 {
 // TODO make this inspect .git manually
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn isType(alloc: std.mem.Allocator, dir: nfs.Dir, maybeobj: Id, typ: RefType) !bool {
-    const t = tracer.trace(@src(), " {s} = {s} ?", .{ maybeobj, @tagName(typ) });
+pub fn isType(alloc: std.mem.Allocator, dir: nfs.Dir, maybeoid: Id, typ: RefType) !bool {
+    const t = tracer.trace(@src(), " {s} = {s} ?", .{ maybeoid, @tagName(typ) });
     defer t.end();
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "cat-file", "-t", maybeobj },
+        .argv = &.{ "git", "cat-file", "-t", maybeoid },
     });
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     const output = std.mem.trimRight(u8, result.stdout, "\n");
@@ -176,14 +176,14 @@ pub fn isType(alloc: std.mem.Allocator, dir: nfs.Dir, maybeobj: Id, typ: RefType
 // TODO make this inspect .git manually
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getType(alloc: std.mem.Allocator, dir: nfs.Dir, obj: Id) !RefType {
-    const t = tracer.trace(@src(), " {s}", .{obj});
+pub fn getType(alloc: std.mem.Allocator, dir: nfs.Dir, oid: Id) !RefType {
+    const t = tracer.trace(@src(), " {s}", .{oid});
     defer t.end();
 
     const result = try std.process.Child.run(.{
         .allocator = alloc,
         .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "cat-file", "-t", obj },
+        .argv = &.{ "git", "cat-file", "-t", oid },
     });
     std.debug.assert(result.term == .Exited and result.term.Exited == 0);
     const output = std.mem.trimRight(u8, result.stdout, "\n");
@@ -1010,14 +1010,14 @@ pub const Repository = struct {
         r.tags.deinit(r.gpa);
     }
 
-    fn getObject(r: *Repository, obj: Id, arena: std.mem.Allocator) !?RawObject {
-        if (r.raw_object_contents.get(obj)) |data| {
+    fn getObject(r: *Repository, oid: Id, arena: std.mem.Allocator) !?RawObject {
+        if (r.raw_object_contents.get(oid)) |data| {
             return data;
         }
-        if (obj.len == 40) blk: { //sha1 object
+        if (oid.len == 40) blk: { //sha1 object
             var sub_path: [49:0]u8 = "objects/00/00000000000000000000000000000000000000".*;
-            @memcpy(sub_path[8..][0..2], obj[0..2]);
-            @memcpy(sub_path[11..], obj[2..]);
+            @memcpy(sub_path[8..][0..2], oid[0..2]);
+            @memcpy(sub_path[11..], oid[2..]);
             const objfile = r.gitdir.openFile(&sub_path, .{}) catch |err| switch (err) {
                 error.ENOENT => break :blk,
                 else => |e| return e,
@@ -1036,7 +1036,7 @@ pub const Repository = struct {
             list.replaceRangeAssumeCapacity(0, header.len + 1, "");
             const content = try list.toOwnedSlice();
             std.debug.assert(content.len == content_len);
-            try r.raw_object_contents.put(r.gpa, obj, .{ _type, content });
+            try r.raw_object_contents.put(r.gpa, oid, .{ _type, content });
             return .{ _type, content };
         }
 
@@ -1072,7 +1072,7 @@ pub const Repository = struct {
                 for (0..object_count) |i| {
                     const object_id = &extras.to_hex(name_bytes[i * 20 ..][0..20].*);
                     const pack_offset = std.mem.readInt(u32, offset_bytes[i * 4 ..][0..4], .big);
-                    if (std.mem.eql(u8, object_id, obj)) {
+                    if (std.mem.eql(u8, object_id, oid)) {
                         std.log.debug("found {s} in {s} at offset {d}", .{ obj, idx_path, pack_offset });
                         const pack_index = r.pack_content.getIndex(idx_path) orelse clk: {
                             var pack_path: [128]u8 = @splat(0);
@@ -1098,10 +1098,10 @@ pub const Repository = struct {
         // parse .pack
         std.log.warn("pack_index={d} pack_offset={d}", .{ pack_index, pack_offset });
 
-        return try r.getPackedObject(obj, pack_index, pack_offset);
+        return try r.getPackedObject(oid, pack_index, pack_offset);
     }
 
-    fn getPackedObject(r: *Repository, maybe_obj: ?Id, pack_index: usize, pack_offset: usize) !RawObject {
+    fn getPackedObject(r: *Repository, maybe_oid: ?Id, pack_index: usize, pack_offset: usize) !RawObject {
         const pack_content = r.pack_content.values()[pack_index];
         if (!std.mem.eql(u8, pack_content[0..4], "PACK")) return error.InvalidGitPack;
         const pack_version = std.mem.readInt(u32, pack_content[4..][0..4], .big);
@@ -1140,7 +1140,7 @@ pub const Repository = struct {
                         try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
                         const _type = std.meta.stringToEnum(RefType, @tagName(ty)).?;
                         const content = try list.toOwnedSlice();
-                        if (maybe_obj) |obj| try r.raw_object_contents.put(r.gpa, obj, .{ _type, content });
+                        if (maybe_oid) |oid| try r.raw_object_contents.put(r.gpa, oid, .{ _type, content });
                         return .{ _type, content };
                     },
                     .ofs_delta => {
@@ -1161,8 +1161,8 @@ pub const Repository = struct {
         }
     }
 
-    pub fn getGitObject(r: *Repository, arena: std.mem.Allocator, obj: Id) !?GitObject {
-        if (try r.getObject(obj, arena)) |data| {
+    pub fn getGitObject(r: *Repository, arena: std.mem.Allocator, oid: Id) !?GitObject {
+        if (try r.getObject(oid, arena)) |data| {
             const _type, const content = data;
             return .{ .type = _type, .content = content };
         }
