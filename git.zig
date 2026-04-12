@@ -1089,6 +1089,10 @@ pub const Repository = struct {
         // parse .pack
         std.log.warn("pack_index={d} pack_offset={d}", .{ pack_index, pack_offset });
 
+        return try r.getPackedObject(obj, pack_index, pack_offset);
+    }
+
+    fn getPackedObject(r: *Repository, maybe_obj: ?Id, pack_index: usize, pack_offset: usize) ![]const u8 {
         const pack_content = r.pack_content.values()[pack_index];
         if (!std.mem.eql(u8, pack_content[0..4], "PACK")) return error.InvalidGitPack;
         const pack_version = std.mem.readInt(u32, pack_content[4..][0..4], .big);
@@ -1112,8 +1116,11 @@ pub const Repository = struct {
                 std.log.warn("type={s} size={d}", .{ @tagName(ty), size });
 
                 switch (ty) {
-                    .none, .reserved => {
-                        return null;
+                    .none => {
+                        unreachable;
+                    },
+                    .reserved => {
+                        unreachable;
                     },
                     .commit, .tree, .blob, .tag => {
                         const compressed_content = packedobj_fbs.rest()[0..size];
@@ -1125,14 +1132,16 @@ pub const Repository = struct {
                         try list.writer().print(" {d}\x00", .{size});
                         try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
                         const content = try list.toOwnedSlice();
-                        try r.raw_object_contents.put(r.gpa, obj, content);
+                        if (maybe_obj) |obj| try r.raw_object_contents.put(r.gpa, obj, content);
                         return content;
                     },
                     .ofs_delta => {
-                        return null;
+                        std.log.debug("type={s} size={d}", .{ @tagName(ty), size });
+                        unreachable;
                     },
                     .ref_delta => {
-                        return null;
+                        std.log.debug("type={s} size={d}", .{ @tagName(ty), size });
+                        unreachable;
                     },
                 }
                 comptime unreachable;
@@ -1142,7 +1151,6 @@ pub const Repository = struct {
             },
             else => return error.InvalidGitPack,
         }
-        return null;
     }
 
     pub fn getGitObject(r: *Repository, arena: std.mem.Allocator, obj: Id) !?GitObject {
