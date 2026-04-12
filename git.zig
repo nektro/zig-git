@@ -975,12 +975,14 @@ pub const BlameIterator = struct {
 pub const Repository = struct {
     gitdir: nfs.Dir,
     gpa: std.mem.Allocator,
-    raw_object_contents: std.StringArrayHashMapUnmanaged([]const u8),
+    raw_object_contents: std.StringArrayHashMapUnmanaged(RawObject),
     idx_content: std.StringArrayHashMapUnmanaged([]const u8),
     pack_content: std.StringArrayHashMapUnmanaged([]const u8),
     commits: std.StringArrayHashMapUnmanaged(Commit),
     trees: std.StringArrayHashMapUnmanaged(Tree),
     tags: std.StringArrayHashMapUnmanaged(Tag),
+
+    const RawObject = struct { RefType, []const u8 };
 
     pub fn init(gitdir: nfs.Dir, gpa: std.mem.Allocator) Repository {
         return .{
@@ -996,7 +998,7 @@ pub const Repository = struct {
     }
 
     pub fn deinit(r: *Repository) void {
-        for (r.raw_object_contents.values()) |v| r.gpa.free(v);
+        for (r.raw_object_contents.values()) |v| r.gpa.free(v[1]);
         r.raw_object_contents.deinit(r.gpa);
         for (r.idx_content.values()) |v| nfs.munmap(v);
         r.idx_content.deinit(r.gpa);
@@ -1008,9 +1010,9 @@ pub const Repository = struct {
         r.tags.deinit(r.gpa);
     }
 
-    fn getObject(r: *Repository, obj: Id, arena: std.mem.Allocator) !?[]const u8 {
-        if (r.raw_object_contents.get(obj)) |content| {
-            return content;
+    fn getObject(r: *Repository, obj: Id, arena: std.mem.Allocator) !?RawObject {
+        if (r.raw_object_contents.get(obj)) |data| {
+            return data;
         }
         if (obj.len == 40) blk: { //sha1 object
             var sub_path: [49:0]u8 = "objects/00/00000000000000000000000000000000000000".*;
@@ -1026,9 +1028,16 @@ pub const Repository = struct {
             errdefer list.deinit();
             try list.ensureUnusedCapacity(512);
             try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
+            const data = list.items;
+            const header = data[0..std.mem.indexOfScalar(u8, data, 0).?];
+            const _type_s = header[0..std.mem.indexOfScalar(u8, header, ' ').?];
+            const _type = std.meta.stringToEnum(RefType, _type_s).?;
+            const content_len = try extras.parseDigits(u64, header[_type_s.len + 1 ..], 10);
+            list.replaceRangeAssumeCapacity(0, header.len + 1, "");
             const content = try list.toOwnedSlice();
-            try r.raw_object_contents.put(r.gpa, obj, content);
-            return content;
+            std.debug.assert(content.len == content_len);
+            try r.raw_object_contents.put(r.gpa, obj, .{ _type, content });
+            return .{ _type, content };
         }
 
         // read .idx
@@ -1092,7 +1101,7 @@ pub const Repository = struct {
         return try r.getPackedObject(obj, pack_index, pack_offset);
     }
 
-    fn getPackedObject(r: *Repository, maybe_obj: ?Id, pack_index: usize, pack_offset: usize) ![]const u8 {
+    fn getPackedObject(r: *Repository, maybe_obj: ?Id, pack_index: usize, pack_offset: usize) !RawObject {
         const pack_content = r.pack_content.values()[pack_index];
         if (!std.mem.eql(u8, pack_content[0..4], "PACK")) return error.InvalidGitPack;
         const pack_version = std.mem.readInt(u32, pack_content[4..][0..4], .big);
@@ -1128,12 +1137,11 @@ pub const Repository = struct {
                         var list: std.ArrayList(u8) = .init(r.gpa);
                         errdefer list.deinit();
                         try list.ensureUnusedCapacity(512);
-                        try list.appendSlice(@tagName(ty));
-                        try list.writer().print(" {d}\x00", .{size});
                         try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
+                        const _type = std.meta.stringToEnum(RefType, @tagName(ty)).?;
                         const content = try list.toOwnedSlice();
-                        if (maybe_obj) |obj| try r.raw_object_contents.put(r.gpa, obj, content);
-                        return content;
+                        if (maybe_obj) |obj| try r.raw_object_contents.put(r.gpa, obj, .{ _type, content });
+                        return .{ _type, content };
                     },
                     .ofs_delta => {
                         std.log.debug("type={s} size={d}", .{ @tagName(ty), size });
@@ -1155,14 +1163,8 @@ pub const Repository = struct {
 
     pub fn getGitObject(r: *Repository, arena: std.mem.Allocator, obj: Id) !?GitObject {
         if (try r.getObject(obj, arena)) |data| {
-            const header = data[0..std.mem.indexOfScalar(u8, data, 0).?];
-            const _type = header[0..std.mem.indexOfScalar(u8, header, ' ').?];
-            const content_len = try extras.parseDigits(u64, header[_type.len + 1 ..], 10);
-            std.debug.assert(data[header.len + 1 ..].len == content_len);
-            return .{
-                .type = std.meta.stringToEnum(RefType, _type).?,
-                .content = try arena.dupe(u8, data[header.len + 1 ..]),
-            };
+            const _type, const content = data;
+            return .{ .type = _type, .content = content };
         }
         return null;
     }
