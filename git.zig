@@ -1145,7 +1145,7 @@ pub const Repository = struct {
         return null;
     }
 
-    pub fn getGitObject(r: *Repository, obj: Id, arena: std.mem.Allocator) !?GitObject {
+    pub fn getGitObject(r: *Repository, arena: std.mem.Allocator, obj: Id) !?GitObject {
         if (try r.getObject(obj, arena)) |data| {
             const header = data[0..std.mem.indexOfScalar(u8, data, 0).?];
             const _type = header[0..std.mem.indexOfScalar(u8, header, ' ').?];
@@ -1168,7 +1168,7 @@ pub const Repository = struct {
         if (r.commits.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
-        if (try r.getGitObject(id.id, arena)) |obj| {
+        if (try r.getGitObject(arena, id.id)) |obj| {
             if (obj.type == .commit) {
                 const commit = try parseCommit(arena, obj.content);
                 try r.commits.put(r.gpa, id.id, commit);
@@ -1182,7 +1182,7 @@ pub const Repository = struct {
         if (r.trees.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
-        if (try r.getGitObject(id.id, arena)) |obj| {
+        if (try r.getGitObject(arena, id.id)) |obj| {
             if (obj.type == .tree) {
                 var children = std.ArrayList(Tree.Object).init(r.gpa);
                 errdefer children.deinit();
@@ -1229,7 +1229,7 @@ pub const Repository = struct {
         if (r.tags.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
-        if (try r.getGitObject(id.id, arena)) |obj| {
+        if (try r.getGitObject(arena, id.id)) |obj| {
             if (obj.type == .tag) {
                 const tag = try parseTag(obj.content);
                 try r.tags.put(r.gpa, id.id, tag);
