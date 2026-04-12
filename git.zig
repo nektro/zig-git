@@ -951,6 +951,9 @@ pub const Repository = struct {
     }
 
     pub fn getObject(r: *Repository, arena: std.mem.Allocator, oid: Id) !?GitObject {
+        const t = tracer.trace(@src(), " {s}", .{oid});
+        defer t.end();
+
         if (r.unpacked_objects.get(oid)) |obj| {
             return obj;
         }
@@ -1043,6 +1046,9 @@ pub const Repository = struct {
     }
 
     fn getPackedObject(r: *Repository, maybe_oid: ?Id, pack_index: usize, pack_offset: usize) !GitObject {
+        const t = tracer.trace(@src(), " {?s} {d} {d}", .{ maybe_oid, pack_index, pack_offset });
+        defer t.end();
+
         const pack_content = r.pack_content.values()[pack_index];
         if (!std.mem.eql(u8, pack_content[0..4], "PACK")) return error.InvalidGitPack;
         const pack_version = std.mem.readInt(u32, pack_content[4..][0..4], .big);
@@ -1180,6 +1186,9 @@ pub const Repository = struct {
     };
 
     pub fn getCommit(r: *Repository, arena: std.mem.Allocator, id: CommitId) !?struct { CommitId, Commit } {
+        const t = tracer.trace(@src(), " {s}", .{id.id});
+        defer t.end();
+
         if (r.commits.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
@@ -1194,6 +1203,9 @@ pub const Repository = struct {
     }
 
     pub fn getTree(r: *Repository, arena: std.mem.Allocator, id: TreeId) !?struct { TreeId, Tree } {
+        const t = tracer.trace(@src(), " {s}", .{id.id});
+        defer t.end();
+
         if (r.trees.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
@@ -1241,6 +1253,9 @@ pub const Repository = struct {
     }
 
     pub fn getTag(r: *Repository, arena: std.mem.Allocator, id: TagId) !?struct { TagId, Tag } {
+        const t = tracer.trace(@src(), " {s}", .{id.id});
+        defer t.end();
+
         if (r.tags.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
@@ -1255,14 +1270,23 @@ pub const Repository = struct {
     }
 
     pub fn getHeads(r: *Repository, arena: std.mem.Allocator) ![]Ref {
+        const t = tracer.trace(@src(), "", .{});
+        defer t.end();
+
         return r.getRefs(arena, "heads");
     }
 
     pub fn getTags(r: *Repository, arena: std.mem.Allocator) ![]Ref {
+        const t = tracer.trace(@src(), "", .{});
+        defer t.end();
+
         return r.getRefs(arena, "tags");
     }
 
     pub fn getRefs(r: *Repository, arena: std.mem.Allocator, comptime kind: [:0]const u8) ![]Ref {
+        const t = tracer.trace(@src(), "", .{});
+        defer t.end();
+
         var map: std.StringArrayHashMapUnmanaged(Id) = .empty;
         try r.addPackedRefs(&map, arena, kind);
         try r.addDirRefs(&map, arena, kind);
@@ -1273,6 +1297,9 @@ pub const Repository = struct {
     }
 
     fn addPackedRefs(r: *Repository, map: *std.StringArrayHashMapUnmanaged(Id), arena: std.mem.Allocator, comptime kind: [:0]const u8) !void {
+        const t = tracer.trace(@src(), "", .{});
+        defer t.end();
+
         var file = try r.gitdir.openFile("packed-refs", .{});
         defer file.close();
         const content = try file.mmap();
@@ -1292,6 +1319,9 @@ pub const Repository = struct {
     }
 
     fn addDirRefs(r: *Repository, map: *std.StringArrayHashMapUnmanaged(Id), arena: std.mem.Allocator, comptime kind: [:0]const u8) !void {
+        const t = tracer.trace(@src(), "", .{});
+        defer t.end();
+
         var dir = try r.gitdir.openDir("refs/" ++ kind, .{});
         defer dir.close();
         var walker = try dir.walk(arena);
