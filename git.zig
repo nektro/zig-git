@@ -1014,7 +1014,7 @@ pub const Repository = struct {
                     const object_id = &extras.to_hex(name_bytes[i * 20 ..][0..20].*);
                     const pack_offset = std.mem.readInt(u32, offset_bytes[i * 4 ..][0..4], .big);
                     if (std.mem.eql(u8, object_id, oid)) {
-                        std.log.debug("found {s} in {s} at offset {d}", .{ obj, idx_path, pack_offset });
+                        std.log.debug("found {s} in {s} at offset {d}", .{ oid, idx_path, pack_offset });
                         const pack_index = r.pack_content.getIndex(idx_path) orelse clk: {
                             var pack_path: [128]u8 = @splat(0);
                             @memcpy(pack_path[0..13], "objects/pack/");
@@ -1037,7 +1037,7 @@ pub const Repository = struct {
         } else return null;
 
         // parse .pack
-        std.log.warn("pack_index={d} pack_offset={d}", .{ pack_index, pack_offset });
+        std.log.debug("pack_index={d} pack_offset={d}", .{ pack_index, pack_offset });
 
         return try r.getPackedObject(oid, pack_index, pack_offset);
     }
@@ -1049,11 +1049,8 @@ pub const Repository = struct {
         switch (pack_version) {
             2 => {
                 const packedobj_content = pack_content[pack_offset..];
-                // var packedobj_fbs = std.ArrayListUnmanaged(u8).initBuffer(packedobj_content);
                 var packedobj_fbs = nio.FixedBufferStream([]const u8).init(packedobj_content);
-
                 const PackedObjType = enum(u3) { none, commit, tree, blob, tag, reserved, ofs_delta, ref_delta };
-
                 var c: usize = packedobj_fbs.takeByte();
                 const ty: PackedObjType = @enumFromInt((c >> 4) & 7);
                 var size: usize = c & 15;
@@ -1063,8 +1060,6 @@ pub const Repository = struct {
                     size += (c & 0x7f) << shift;
                     shift += 7;
                 }
-                std.log.warn("type={s} size={d}", .{ @tagName(ty), size });
-
                 switch (ty) {
                     .none => {
                         unreachable;
@@ -1087,7 +1082,83 @@ pub const Repository = struct {
                     },
                     .ofs_delta => {
                         std.log.debug("type={s} size={d}", .{ @tagName(ty), size });
-                        unreachable;
+                        var offset: usize = 0;
+                        while (true) {
+                            const c2: usize = packedobj_fbs.takeByte();
+                            offset = (offset << 7) | (c2 & 0x7f);
+                            if (c2 & 0x80 == 0) break;
+                            offset += 1;
+                        }
+                        const base_pack_offset = pack_offset - offset;
+                        const base_obj = try r.getPackedObject(null, pack_index, base_pack_offset);
+                        std.log.debug("base: type={s} content=[{d}]", .{ @tagName(base_obj.type), base_obj.content.len });
+
+                        const compressed_content = packedobj_fbs.rest()[0..size];
+                        var bufr = nio.FixedBufferStream([]const u8).init(compressed_content);
+
+                        var list: std.ArrayListUnmanaged(u8) = .empty;
+                        defer list.deinit(r.gpa);
+                        try list.ensureUnusedCapacity(r.gpa, size);
+                        try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer(r.gpa));
+
+                        std.log.debug("transformation data={d}", .{list.items});
+
+                        var unpackedobj_fbs = nio.FixedBufferStream([]const u8).init(list.items);
+
+                        var list2: std.ArrayListUnmanaged(u8) = .empty;
+                        errdefer list2.deinit(r.gpa);
+
+                        var base_size: usize = 0;
+                        while (true) {
+                            const c2: usize = unpackedobj_fbs.takeByte();
+                            base_size = (base_size << 7) | (c2 & 0x7f);
+                            if (c2 & 0x80 == 0) break;
+                            base_size += 1;
+                        }
+                        std.log.debug("base_size={d}", .{base_size});
+
+                        var obj_size: usize = 0;
+                        while (true) {
+                            const c2: usize = unpackedobj_fbs.takeByte();
+                            obj_size = (obj_size << 7) | (c2 & 0x7f);
+                            if (c2 & 0x80 == 0) break;
+                            obj_size += 1;
+                        }
+                        std.log.debug("obj_size={d}", .{obj_size});
+
+                        while (unpackedobj_fbs.pos < unpackedobj_fbs.buffer.len) {
+                            const c2 = unpackedobj_fbs.takeByte();
+                            if (c2 & 0x80 > 0) {
+                                // copy range from base
+                                var b: extras.RingBuffer(u8, 7) = .{};
+                                for (0..7) |i| {
+                                    const mask = @as(u8, 1) << @intCast(i);
+                                    b.append(if (c2 & mask > 0) unpackedobj_fbs.takeByte() else 0);
+                                }
+                                const start: u32 = @bitCast(b.items[0..4].*);
+                                const nbytes: u24 = @bitCast(b.items[4..7].*);
+                                std.log.debug("- copy from base: start={d} nbytes={d}", .{ start, nbytes });
+                                const bytes = base_obj.content[start..][0..nbytes];
+                                // std.log.debug("{s}\n", .{bytes});
+                                try list2.appendSlice(r.gpa, bytes);
+                            } else {
+                                // append new data
+                                const nbytes = c2 & 0x7f;
+                                std.log.debug("- append new bytes={d}", .{nbytes});
+                                if (nbytes == 0) continue;
+                                const bytes = unpackedobj_fbs.takeSlice(nbytes);
+                                // std.log.debug("{s}\n", .{bytes});
+                                try list2.appendSlice(r.gpa, bytes);
+                            }
+                        }
+
+                        std.log.debug("- done", .{});
+                        // std.log.debug("{s}\n", .{list2.items});
+                        const _type = base_obj.type;
+                        const content = try list2.toOwnedSlice(r.gpa);
+                        const obj: GitObject = .{ .type = _type, .content = content };
+                        if (maybe_oid) |oid| try r.unpacked_objects.put(r.gpa, oid, obj);
+                        return obj;
                     },
                     .ref_delta => {
                         std.log.debug("type={s} size={d}", .{ @tagName(ty), size });
