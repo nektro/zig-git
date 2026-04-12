@@ -770,64 +770,6 @@ pub const TreeDiff = struct {
     };
 };
 
-pub fn getBranches(alloc: std.mem.Allocator, dir: nfs.Dir) ![]Ref {
-    const t = tracer.trace(@src(), "", .{});
-    defer t.end();
-
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "show-ref", "--heads" },
-        .max_output_bytes = 1024 * 1024 * 1024,
-    });
-    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
-    const output = std.mem.trimRight(u8, result.stdout, "\n");
-    var iter = std.mem.splitScalar(u8, output, '\n');
-    var list = std.ArrayList(Ref).init(alloc);
-    errdefer list.deinit();
-    while (iter.next()) |line| {
-        var jter = std.mem.splitScalar(u8, line, ' ');
-        try list.append(Ref{
-            .oid = ensureObjId(CommitId, jter.next().?).id,
-            .label = extras.trimPrefixEnsure(jter.rest(), "refs/heads/").?,
-        });
-    }
-    return list.toOwnedSlice();
-}
-
-pub fn getTags(alloc: std.mem.Allocator, dir: nfs.Dir) ![]Ref {
-    const t = tracer.trace(@src(), "", .{});
-    defer t.end();
-
-    // 97bc4b5f87656a34139e1a8122866c8c5b432598 refs/tags/1.2.5
-    // a450a23e318c5a8fcba5a52c8fdc2e23584650b3 refs/tags/1.2.5^{}
-    // 71264720050572b7bad24532ff39951f47d9296a refs/tags/15.3.1
-    // 7dfd3948a9095f0253bfba60fed52895ffbf84bb refs/tags/15.3.2
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "show-ref", "--tags" },
-        .max_output_bytes = 1024 * 1024 * 1024,
-    });
-    if (result.term == .Exited and result.term.Exited == 1) return &.{}; // show-ref exits 1 when there are no tags
-    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
-    const output = std.mem.trimRight(u8, result.stdout, "\n");
-    var iter = std.mem.splitScalar(u8, output, '\n');
-    var list = std.ArrayList(Ref).init(alloc);
-    errdefer list.deinit();
-    while (iter.next()) |line| {
-        var jter = std.mem.splitScalar(u8, line, ' ');
-        const id = ensureObjId(CommitId, jter.next().?).id;
-        const label = extras.trimPrefixEnsure(jter.rest(), "refs/tags/").?;
-
-        try list.append(Ref{
-            .oid = id,
-            .label = label,
-        });
-    }
-    return list.toOwnedSlice();
-}
-
 pub const Ref = struct {
     oid: Id,
     label: string,
@@ -1247,5 +1189,57 @@ pub const Repository = struct {
             }
         }
         return null;
+    }
+
+    pub fn getHeads(r: *Repository, arena: std.mem.Allocator) ![]Ref {
+        return r.getRefs(arena, "heads");
+    }
+
+    pub fn getTags(r: *Repository, arena: std.mem.Allocator) ![]Ref {
+        return r.getRefs(arena, "tags");
+    }
+
+    pub fn getRefs(r: *Repository, arena: std.mem.Allocator, comptime kind: [:0]const u8) ![]Ref {
+        var map: std.StringArrayHashMapUnmanaged(Id) = .empty;
+        try r.addPackedRefs(&map, arena, kind);
+        try r.addDirRefs(&map, arena, kind);
+        var list: std.ArrayListUnmanaged(Ref) = .empty;
+        try list.ensureUnusedCapacity(arena, map.count());
+        for (map.keys(), map.values()) |label, oid| list.appendAssumeCapacity(.{ .oid = oid, .label = label });
+        return list.items;
+    }
+
+    fn addPackedRefs(r: *Repository, map: *std.StringArrayHashMapUnmanaged(Id), arena: std.mem.Allocator, comptime kind: [:0]const u8) !void {
+        var file = try r.gitdir.openFile("packed-refs", .{});
+        defer file.close();
+        const content = try file.mmap();
+        defer nfs.munmap(content);
+        var iter = std.mem.splitScalar(u8, content, '\n');
+        while (iter.next()) |line| {
+            if (line.len == 0) break;
+            if (line[0] == '^') continue;
+            if (line[0] == '#') continue;
+            std.debug.assert(extras.matchesAll(u8, line[0..40], std.ascii.isHex));
+            std.debug.assert(line[40] == ' ');
+            const rest = extras.trimPrefixEnsure(line[41..], "refs/" ++ kind ++ "/") orelse continue;
+            const oid = try arena.dupe(u8, line[0..40]);
+            const label = try arena.dupeZ(u8, rest);
+            try map.put(arena, label, oid[0..40]);
+        }
+    }
+
+    fn addDirRefs(r: *Repository, map: *std.StringArrayHashMapUnmanaged(Id), arena: std.mem.Allocator, comptime kind: [:0]const u8) !void {
+        var dir = try r.gitdir.openDir("refs/" ++ kind, .{});
+        defer dir.close();
+        var walker = try dir.walk(arena);
+        defer walker.deinit();
+        while (try walker.next()) |entry| {
+            if (entry.type != .REG) continue;
+            var file = try dir.openFile(entry.path, .{});
+            defer file.close();
+            const label = try arena.dupeZ(u8, entry.path);
+            const oid = try file.readAlloc(arena, 40);
+            try map.put(arena, label, oid[0..40]);
+        }
     }
 };
