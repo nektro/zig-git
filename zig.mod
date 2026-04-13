@@ -9,6 +9,30 @@ dependencies:
   - src: git https://github.com/nektro/zig-tracer
   - src: git https://github.com/nektro/zig-nfs
   - src: git https://github.com/nektro/zig-nio
+
+  - src: git https://github.com/madler/zlib tag-v1.3.2
+    license: Zlib
+    c_include_dirs:
+      -
+    c_source_files:
+      - inftrees.c
+      - inflate.c
+      - adler32.c
+      - zutil.c
+      - trees.c
+      - gzclose.c
+      - gzwrite.c
+      - gzread.c
+      - deflate.c
+      - compress.c
+      - crc32.c
+      - infback.c
+      - gzlib.c
+      - uncompr.c
+      - inffast.c
+    c_source_flags:
+      - -DZ_HAVE_UNISTD_H=1
+
 root_dependencies:
   - src: git https://github.com/nektro/zig-extras
   - src: git https://github.com/nektro/zig-expect

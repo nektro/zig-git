@@ -966,18 +966,20 @@ pub const Repository = struct {
                 else => |e| return e,
             };
             defer objfile.close();
-            var bufr = nio.BufferedReader(4096, nfs.File).init(objfile);
-            var list: std.ArrayList(u8) = .init(r.gpa);
-            errdefer list.deinit();
-            try list.ensureUnusedCapacity(512);
-            try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
+            const compressed_content = try objfile.mmap();
+            defer nfs.munmap(compressed_content);
+            var list: std.ArrayListUnmanaged(u8) = .empty;
+            errdefer list.deinit(r.gpa);
+            try list.ensureUnusedCapacity(r.gpa, 512);
+            // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
+            try inflate_decompress(compressed_content, &list, r.gpa);
             const data = list.items;
             const header = data[0..std.mem.indexOfScalar(u8, data, 0).?];
             const _type_s = header[0..std.mem.indexOfScalar(u8, header, ' ').?];
             const _type = std.meta.stringToEnum(RefType, _type_s).?;
             const content_len = try extras.parseDigits(u64, header[_type_s.len + 1 ..], 10);
             list.replaceRangeAssumeCapacity(0, header.len + 1, "");
-            const content = try list.toOwnedSlice();
+            const content = try list.toOwnedSlice(r.gpa);
             std.debug.assert(content.len == content_len);
             const obj: GitObject = .{ .type = _type, .content = content };
             try r.unpacked_objects.put(r.gpa, oid, obj);
@@ -1096,13 +1098,13 @@ pub const Repository = struct {
                     },
                     .commit, .tree, .blob, .tag => {
                         const compressed_content = packedobj_fbs.rest()[0..size];
-                        var bufr = nio.FixedBufferStream([]const u8).init(compressed_content);
-                        var list: std.ArrayList(u8) = .init(r.gpa);
-                        errdefer list.deinit();
-                        try list.ensureUnusedCapacity(512);
-                        try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
+                        var list: std.ArrayListUnmanaged(u8) = .empty;
+                        errdefer list.deinit(r.gpa);
+                        try list.ensureUnusedCapacity(r.gpa, 512);
+                        // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
+                        try inflate_decompress(compressed_content, &list, r.gpa);
                         const _type = std.meta.stringToEnum(RefType, @tagName(ty)).?;
-                        const content = try list.toOwnedSlice();
+                        const content = try list.toOwnedSlice(r.gpa);
                         const obj: GitObject = .{ .type = _type, .content = content };
                         if (maybe_oid) |oid| try r.unpacked_objects.put(r.gpa, oid, obj);
                         return obj;
@@ -1140,12 +1142,11 @@ pub const Repository = struct {
 
     fn getDeltadObject(r: *Repository, maybe_oid: ?Id, packedobj_fbs: *nio.FixedBufferStream([]const u8), size: usize, base_obj: GitObject) !GitObject {
         const compressed_content = packedobj_fbs.rest()[0..size];
-        var bufr = nio.FixedBufferStream([]const u8).init(compressed_content);
-
         var list: std.ArrayListUnmanaged(u8) = .empty;
         defer list.deinit(r.gpa);
         try list.ensureUnusedCapacity(r.gpa, size);
-        try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer(r.gpa));
+        // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer(r.gpa));
+        try inflate_decompress(compressed_content, &list, r.gpa);
         // std.log.debug("transformation data={d}", .{list.items});
 
         var unpackedobj_fbs = nio.FixedBufferStream([]const u8).init(list.items);
@@ -1361,4 +1362,59 @@ pub const Repository = struct {
             try map.put(arena, label, oid[0..40]);
         }
     }
+};
+
+const z = @cImport({
+    @cInclude("zlib.h");
+});
+
+fn inflate_decompress(in: []const u8, out: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator) !void {
+    // std.log.debug("{x}", .{in});
+    var strm: z.z_stream = std.mem.zeroes(z.z_stream);
+    {
+        const ret: ZlibCode = @enumFromInt(z.inflateInit(&strm));
+        if (ret == .Z_MEM_ERROR) return error.OutOfMemory;
+        std.debug.assert(ret != .Z_VERSION_ERROR);
+        std.debug.assert(ret != .Z_STREAM_ERROR);
+    }
+    defer {
+        const ret: ZlibCode = @enumFromInt(z.inflateEnd(&strm));
+        std.debug.assert(ret != .Z_STREAM_ERROR);
+        std.debug.assert(ret == .Z_OK);
+    }
+    strm.next_in = @constCast(in.ptr);
+    strm.avail_in = @intCast(in.len);
+    // std.log.debug("inflate_decompress: -> {*} {d}", .{ strm.next_in, strm.avail_in });
+
+    while (true) {
+        var buf: [16384]u8 = @splat(0);
+        strm.next_out = &buf;
+        strm.avail_out = buf.len;
+        // std.log.debug("inflate_decompress: -> {*} {*} {d} {d}", .{ strm.next_in, strm.next_out, strm.avail_in, strm.avail_out });
+        const ret: ZlibCode = @enumFromInt(z.inflate(&strm, z.Z_NO_FLUSH));
+        // std.log.debug("inflate_decompress: <- {*} {*} {d} {d} {s}", .{ strm.next_in, strm.next_out, strm.avail_in, strm.avail_out, @tagName(ret) });
+        std.debug.assert(ret != .Z_STREAM_ERROR);
+        // if (ret == .Z_BUF_ERROR) std.log.err("{s}", .{strm.msg});
+        std.debug.assert(ret != .Z_BUF_ERROR);
+        if (ret == .Z_MEM_ERROR) return error.OutOfMemory;
+        if (ret == .Z_DATA_ERROR) return error.Z_DATA_ERROR;
+        if (ret == .Z_NEED_DICT) return error.Z_NEED_DICT;
+        // Z_ERRNO
+        // Z_VERSION_ERROR
+        std.debug.assert(ret == .Z_OK or ret == .Z_STREAM_END);
+        try out.appendSlice(allocator, buf[0 .. buf.len - strm.avail_out]);
+        if (ret == .Z_STREAM_END) break;
+    }
+}
+
+const ZlibCode = enum(c_int) {
+    Z_OK = 0,
+    Z_STREAM_END = 1,
+    Z_NEED_DICT = 2,
+    Z_ERRNO = -1,
+    Z_STREAM_ERROR = -2,
+    Z_DATA_ERROR = -3,
+    Z_MEM_ERROR = -4,
+    Z_BUF_ERROR = -5,
+    Z_VERSION_ERROR = -6,
 };
