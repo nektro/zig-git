@@ -986,10 +986,14 @@ pub const Repository = struct {
 
         // read .idx
         if (r.idx_content.count() == 0) {
+            const t2 = tracer.trace(@src(), " read objects/pack", .{});
+            defer t2.end();
             const packdir = try r.gitdir.openDir("objects/pack", .{});
             defer packdir.close();
             var iter = packdir.iterate();
             while (try iter.next()) |entry| {
+                const t3 = tracer.trace(@src(), " {s}", .{entry.name});
+                defer t3.end();
                 if (entry.type != .REG) continue;
                 if (!std.mem.endsWith(u8, entry.name, ".idx")) continue;
                 // std.log.debug("packdir iterate: {s}", .{entry.name});
@@ -1005,7 +1009,11 @@ pub const Repository = struct {
                 );
             }
         }
+        const t4 = tracer.trace(@src(), " find pack_index/pack_offset", .{});
+        errdefer t4.end();
         const pack_index, const pack_offset = blk: for (r.idx_content.keys(), r.idx_content.values()) |idx_path, idx_content| {
+            const t5 = tracer.trace(@src(), " {s}", .{idx_path});
+            defer t5.end();
             if (std.mem.startsWith(u8, idx_content, "\xfftOc")) {
                 std.debug.assert(std.mem.readInt(u32, idx_content[4..][0..4], .big) == 2);
                 const flfo_table_bytes = idx_content[8..][0 .. 256 * 4];
@@ -1013,31 +1021,42 @@ pub const Repository = struct {
                 const name_bytes = idx_content[8..][1024..][0 .. object_count * 20];
                 const crc32_bytes = idx_content[8..][1024..][name_bytes.len..][0 .. object_count * 4];
                 const offset_bytes = idx_content[8..][1024..][name_bytes.len..][crc32_bytes.len..][0 .. object_count * 4];
-                for (0..object_count) |i| {
-                    const object_id = &extras.to_hex(name_bytes[i * 20 ..][0..20].*);
-                    const pack_offset = std.mem.readInt(u32, offset_bytes[i * 4 ..][0..4], .big);
-                    if (std.mem.eql(u8, object_id, oid)) {
-                        // std.log.debug("found {s} in {s} at offset {d}", .{ oid, idx_path, pack_offset });
-                        const pack_index = r.pack_content.getIndex(idx_path) orelse clk: {
-                            var pack_path: [128]u8 = @splat(0);
-                            @memcpy(pack_path[0..13], "objects/pack/");
-                            @memcpy(pack_path[13..][0..idx_path.len], idx_path);
-                            @memcpy(pack_path[13..][idx_path.len - 4 ..][0..5], ".pack");
-                            const pack_name_nidx = std.mem.indexOfScalar(u8, &pack_path, 0).?;
-                            const pack_file = try r.gitdir.openFile(pack_path[0..pack_name_nidx :0], .{});
-                            defer pack_file.close();
-                            const pack_content = try pack_file.mmap();
-                            errdefer nfs.munmap(pack_content);
-                            try r.pack_content.put(r.gpa, idx_path, pack_content);
-                            break :clk r.pack_content.count() - 1;
-                        };
-                        break :blk .{ pack_index, pack_offset };
+                // std.sort.binarySearch;
+                const i = bll: {
+                    var low: usize = 0;
+                    var high: usize = object_count;
+                    while (low < high) {
+                        const mid = low + (high - low) / 2;
+                        const object_id = &extras.to_hex(name_bytes[mid * 20 ..][0..20].*);
+                        switch (std.mem.order(u8, oid, object_id)) {
+                            .eq => break :bll mid,
+                            .gt => low = mid + 1,
+                            .lt => high = mid,
+                        }
                     }
-                }
+                    continue;
+                };
+                const pack_offset = std.mem.readInt(u32, offset_bytes[i * 4 ..][0..4], .big);
+                // std.log.debug("found {s} in {s} at offset {d}", .{ oid, idx_path, pack_offset });
+                const pack_index = r.pack_content.getIndex(idx_path) orelse clk: {
+                    var pack_path: [128]u8 = @splat(0);
+                    @memcpy(pack_path[0..13], "objects/pack/");
+                    @memcpy(pack_path[13..][0..idx_path.len], idx_path);
+                    @memcpy(pack_path[13..][idx_path.len - 4 ..][0..5], ".pack");
+                    const pack_name_nidx = std.mem.indexOfScalar(u8, &pack_path, 0).?;
+                    const pack_file = try r.gitdir.openFile(pack_path[0..pack_name_nidx :0], .{});
+                    defer pack_file.close();
+                    const pack_content = try pack_file.mmap();
+                    errdefer nfs.munmap(pack_content);
+                    try r.pack_content.put(r.gpa, idx_path, pack_content);
+                    break :clk r.pack_content.count() - 1;
+                };
+                break :blk .{ pack_index, pack_offset };
             } else {
                 return error.Version1Idx;
             }
         } else return null;
+        t4.end();
 
         // parse .pack
         // std.log.debug("pack_index={d} pack_offset={d}", .{ pack_index, pack_offset });
@@ -1066,6 +1085,8 @@ pub const Repository = struct {
                     size += (c & 0x7f) << shift;
                     shift += 7;
                 }
+                const t2 = tracer.trace(@src(), " 2 {s} {d}", .{ @tagName(ty), size });
+                defer t2.end();
                 switch (ty) {
                     .none => {
                         unreachable;
