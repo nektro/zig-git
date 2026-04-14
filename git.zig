@@ -1046,7 +1046,8 @@ pub const Repository = struct {
                     @memcpy(pack_path[13..][0..idx_path.len], idx_path);
                     @memcpy(pack_path[13..][idx_path.len - 4 ..][0..5], ".pack");
                     const pack_name_nidx = std.mem.indexOfScalar(u8, &pack_path, 0).?;
-                    const pack_file = try r.gitdir.openFile(pack_path[0..pack_name_nidx :0], .{});
+                    const pack_name = pack_path[0..pack_name_nidx :0];
+                    const pack_file = try r.gitdir.openFile(pack_name, .{});
                     defer pack_file.close();
                     const pack_content = try pack_file.mmap();
                     errdefer nfs.munmap(pack_content);
@@ -1087,6 +1088,7 @@ pub const Repository = struct {
                     size += (c & 0x7f) << shift;
                     shift += 7;
                 }
+                // std.log.debug("type={s} size={d}", .{ @tagName(ty), size });
                 const t2 = tracer.trace(@src(), " 2 {s} {d}", .{ @tagName(ty), size });
                 defer t2.end();
                 switch (ty) {
@@ -1097,7 +1099,7 @@ pub const Repository = struct {
                         unreachable;
                     },
                     .commit, .tree, .blob, .tag => {
-                        const compressed_content = packedobj_fbs.rest()[0..size];
+                        const compressed_content = packedobj_fbs.rest();
                         var list: std.ArrayListUnmanaged(u8) = .empty;
                         errdefer list.deinit(r.gpa);
                         try list.ensureUnusedCapacity(r.gpa, 512);
@@ -1110,7 +1112,6 @@ pub const Repository = struct {
                         return obj;
                     },
                     .ofs_delta => {
-                        // std.log.debug("type={s} size={d}", .{ @tagName(ty), size });
                         var offset: usize = 0;
                         while (true) {
                             const c2: usize = packedobj_fbs.takeByte();
@@ -1124,7 +1125,6 @@ pub const Repository = struct {
                         return r.getDeltadObject(maybe_oid, &packedobj_fbs, size, base_obj);
                     },
                     .ref_delta => {
-                        // std.log.debug("type={s} size={d}", .{ @tagName(ty), size });
                         const base_oid = extras.to_hex(packedobj_fbs.takeSlice(20)[0..20].*);
                         const base_obj = (try r.getObject(arena, &base_oid)).?;
                         // std.log.debug("base: type={s} content=[{d}]", .{ @tagName(base_obj.type), base_obj.content.len });
@@ -1141,13 +1141,13 @@ pub const Repository = struct {
     }
 
     fn getDeltadObject(r: *Repository, maybe_oid: ?Id, packedobj_fbs: *nio.FixedBufferStream([]const u8), size: usize, base_obj: GitObject) !GitObject {
-        const compressed_content = packedobj_fbs.rest()[0..size];
+        const compressed_content = packedobj_fbs.rest();
         var list: std.ArrayListUnmanaged(u8) = .empty;
         defer list.deinit(r.gpa);
         try list.ensureUnusedCapacity(r.gpa, size);
         // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer(r.gpa));
         try inflate_decompress(compressed_content, &list, r.gpa);
-        // std.log.debug("transformation data={d}", .{list.items});
+        // std.log.debug("transformation data=[{d}]{d}", .{ list.items.len, list.items });
 
         var unpackedobj_fbs = nio.FixedBufferStream([]const u8).init(list.items);
 
@@ -1369,7 +1369,6 @@ const z = @cImport({
 });
 
 fn inflate_decompress(in: []const u8, out: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator) !void {
-    // std.log.debug("{x}", .{in});
     var strm: z.z_stream = std.mem.zeroes(z.z_stream);
     {
         const ret: ZlibCode = @enumFromInt(z.inflateInit(&strm));
@@ -1391,7 +1390,7 @@ fn inflate_decompress(in: []const u8, out: *std.ArrayListUnmanaged(u8), allocato
         strm.next_out = &buf;
         strm.avail_out = buf.len;
         // std.log.debug("inflate_decompress: -> {*} {*} {d} {d}", .{ strm.next_in, strm.next_out, strm.avail_in, strm.avail_out });
-        const ret: ZlibCode = @enumFromInt(z.inflate(&strm, z.Z_NO_FLUSH));
+        const ret: ZlibCode = @enumFromInt(z.inflate(&strm, z.Z_FINISH));
         // std.log.debug("inflate_decompress: <- {*} {*} {d} {d} {s}", .{ strm.next_in, strm.next_out, strm.avail_in, strm.avail_out, @tagName(ret) });
         std.debug.assert(ret != .Z_STREAM_ERROR);
         // if (ret == .Z_BUF_ERROR) std.log.err("{s}", .{strm.msg});
