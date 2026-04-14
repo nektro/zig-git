@@ -122,74 +122,6 @@ pub fn ensureObjId(comptime T: type, input: string) T {
     return .{ .id = input[0..40] };
 }
 
-// TODO make this inspect .git/objects
-// TODO make this return a Reader when we implement it ourselves
-// https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
-// https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getObjectContent(alloc: std.mem.Allocator, dir: nfs.Dir, oid: Id) !string {
-    const t = tracer.trace(@src(), " {s}", .{oid});
-    defer t.end();
-
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "cat-file", "-p", oid },
-        .max_output_bytes = 1024 * 1024 * 1024,
-    });
-    extras.assertLog(result.term == .Exited and result.term.Exited == 0, "{s}", .{result.stderr});
-    return result.stdout;
-}
-
-// TODO make this inspect .git/objects manually
-// https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
-// https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getObjectSize(alloc: std.mem.Allocator, dir: nfs.Dir, oid: Id) !u64 {
-    const t = tracer.trace(@src(), " {s}", .{oid});
-    defer t.end();
-
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "cat-file", "-s", oid },
-    });
-    extras.assertLog(result.term == .Exited and result.term.Exited == 0, "{s}", .{result.stderr});
-    return try extras.parseDigits(u64, std.mem.trimRight(u8, result.stdout, "\n"), 10);
-}
-
-// TODO make this inspect .git manually
-// https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
-// https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn isType(alloc: std.mem.Allocator, dir: nfs.Dir, maybeoid: Id, typ: RefType) !bool {
-    const t = tracer.trace(@src(), " {s} = {s} ?", .{ maybeoid, @tagName(typ) });
-    defer t.end();
-
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "cat-file", "-t", maybeoid },
-    });
-    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
-    const output = std.mem.trimRight(u8, result.stdout, "\n");
-    return std.meta.stringToEnum(RefType, output).? == typ;
-}
-
-// TODO make this inspect .git manually
-// https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
-// https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn getType(alloc: std.mem.Allocator, dir: nfs.Dir, oid: Id) !RefType {
-    const t = tracer.trace(@src(), " {s}", .{oid});
-    defer t.end();
-
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "cat-file", "-t", oid },
-    });
-    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
-    const output = std.mem.trimRight(u8, result.stdout, "\n");
-    return std.meta.stringToEnum(RefType, output) orelse @panic(output);
-}
-
 // TODO make this inspect .git/objects manually
 // TODO make a version of this that accepts an array of sub_paths and searches all of them at once, so as to not lose spot in history when searching for many old paths
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
@@ -315,43 +247,6 @@ pub const UserAndAt = struct {
     email: string,
     at: time.DateTime,
 };
-
-pub fn parseTree(alloc: std.mem.Allocator, treefile: string) !Tree {
-    const t = tracer.trace(@src(), "", .{});
-    defer t.end();
-
-    var iter = std.mem.splitScalar(u8, treefile, '\n');
-    var children = std.ArrayList(Tree.Object).init(alloc);
-    errdefer children.deinit();
-
-    while (iter.next()) |line| {
-        if (line.len == 0) {
-            std.debug.assert(iter.peek() == null);
-            break;
-        }
-        var jter = std.mem.splitScalar(u8, line, ' ');
-        const mode = jter.next().?;
-        const otype = std.meta.stringToEnum(RefType, jter.next().?).?;
-        const id_and_name = jter.rest();
-        const tab_pos = std.mem.indexOfScalar(u8, id_and_name, '\t').?; // why git. why.
-        std.debug.assert(tab_pos == 40);
-        const id = id_and_name[0..tab_pos][0..40];
-        const name = id_and_name[tab_pos + 1 ..];
-
-        inline for (std.meta.fields(AnyId)) |item| {
-            if (std.mem.eql(u8, item.name, @tagName(otype))) {
-                try children.append(.{
-                    .mode = try parseTreeMode(mode),
-                    .id = @unionInit(AnyId, item.name, item.type{ .id = id }),
-                    .name = name,
-                });
-            }
-        }
-    }
-    return Tree{
-        .children = try children.toOwnedSlice(),
-    };
-}
 
 fn parseTreeMode(input: string) !Tree.Object.Mode {
     const t = tracer.trace(@src(), "", .{});
