@@ -134,7 +134,7 @@ test {
     var repo: git.Repository = .init(git_dir, gpa);
     defer repo.deinit();
     const t = try repo.getTreeA(alloc, "5403fecad0fde9120535321f222a061abc2849d9");
-    // TODO: test fields when we upgrade to 0.14 and have decl literals
+    // TODO: std.testing.expectEqualSlices does ptr equality
     // try expect(try extras.mapBy(alloc, t.children, .id)).toEqualSlice(&.{
     //     .{ .blob = .{ .id = "8e8d2ceba4b327ce9db93f988492d0e21a461012" } },
     //     .{ .blob = .{ .id = "bb2a57bd81d13975f2a74ae5dd0e652de07bb8a7" } },
