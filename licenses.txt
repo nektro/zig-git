@@ -12,5 +12,9 @@ MIT:
 - git https://github.com/nektro/zig-time
 - git https://github.com/nektro/zig-tracer
 
+Zlib:
+= https://spdx.org/licenses/Zlib
+- git https://github.com/madler/zlib
+
 Unspecified:
 - system_lib c
