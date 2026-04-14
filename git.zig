@@ -1147,6 +1147,7 @@ pub const Repository = struct {
         try list.ensureUnusedCapacity(r.gpa, size);
         // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer(r.gpa));
         try inflate_decompress(compressed_content, &list, r.gpa);
+        std.debug.assert(list.items.len == size);
         // std.log.debug("transformation data=[{d}]{d}", .{ list.items.len, list.items });
 
         var unpackedobj_fbs = nio.FixedBufferStream([]const u8).init(list.items);
@@ -1390,7 +1391,7 @@ fn inflate_decompress(in: []const u8, out: *std.ArrayListUnmanaged(u8), allocato
         strm.next_out = &buf;
         strm.avail_out = buf.len;
         // std.log.debug("inflate_decompress: -> {*} {*} {d} {d}", .{ strm.next_in, strm.next_out, strm.avail_in, strm.avail_out });
-        const ret: ZlibCode = @enumFromInt(z.inflate(&strm, z.Z_FINISH));
+        const ret: ZlibCode = @enumFromInt(z.inflate(&strm, z.Z_SYNC_FLUSH));
         // std.log.debug("inflate_decompress: <- {*} {*} {d} {d} {s}", .{ strm.next_in, strm.next_out, strm.avail_in, strm.avail_out, @tagName(ret) });
         std.debug.assert(ret != .Z_STREAM_ERROR);
         // if (ret == .Z_BUF_ERROR) std.log.err("{s}", .{strm.msg});
