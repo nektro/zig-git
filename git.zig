@@ -1016,6 +1016,7 @@ pub const Repository = struct {
                         }
                         const base_pack_offset = pack_offset - offset;
                         const base_obj = try r.getPackedObject(arena, null, pack_index, base_pack_offset);
+                        defer r.gpa.free(base_obj.content);
                         // std.log.debug("base: type={s} content=[{d}]", .{ @tagName(base_obj.type), base_obj.content.len });
                         return r.getDeltadObject(maybe_oid, &packedobj_fbs, size, base_obj);
                     },
@@ -1103,10 +1104,31 @@ pub const Repository = struct {
         return obj;
     }
 
+    pub fn getObjectA(r: *Repository, arena: std.mem.Allocator, oid: Id) !GitObject {
+        return (try r.getObject(arena, oid)).?;
+    }
+
+    pub fn getObjectC(r: *Repository, arena: std.mem.Allocator, oid: Id) ![]const u8 {
+        return (try r.getObjectA(arena, oid)).content;
+    }
+
     const GitObject = struct {
         type: RefType,
         content: []const u8,
     };
+
+    pub fn getBlob(r: *Repository, arena: std.mem.Allocator, id: BlobId) !?[]const u8 {
+        if (try r.getObject(arena, id.id)) |obj| {
+            if (obj.type == .blob) {
+                return obj.content;
+            }
+        }
+        return null;
+    }
+
+    pub fn getBlobA(r: *Repository, arena: std.mem.Allocator, id: Id) ![]const u8 {
+        return (try r.getBlob(arena, .{ .id = id })).?;
+    }
 
     pub fn getCommit(r: *Repository, arena: std.mem.Allocator, id: CommitId) !?struct { CommitId, Commit } {
         const t = tracer.trace(@src(), " {s}", .{id.id});
@@ -1123,6 +1145,10 @@ pub const Repository = struct {
             }
         }
         return null;
+    }
+
+    pub fn getCommitA(r: *Repository, arena: std.mem.Allocator, id: Id) !Commit {
+        return (try r.getCommit(arena, .{ .id = id })).?.@"1";
     }
 
     pub fn getTree(r: *Repository, arena: std.mem.Allocator, id: TreeId) !?struct { TreeId, Tree } {
@@ -1175,6 +1201,10 @@ pub const Repository = struct {
         return null;
     }
 
+    pub fn getTreeA(r: *Repository, arena: std.mem.Allocator, id: Id) !Tree {
+        return (try r.getTree(arena, .{ .id = id })).?.@"1";
+    }
+
     pub fn getTag(r: *Repository, arena: std.mem.Allocator, id: TagId) !?struct { TagId, Tag } {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
@@ -1190,6 +1220,10 @@ pub const Repository = struct {
             }
         }
         return null;
+    }
+
+    pub fn getTagA(r: *Repository, arena: std.mem.Allocator, id: Id) !Tag {
+        return (try r.getTag(arena, .{ .id = id })).?.@"1";
     }
 
     pub fn getHeads(r: *Repository, arena: std.mem.Allocator) ![]Ref {
