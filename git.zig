@@ -320,9 +320,17 @@ pub const Tree = struct {
                 try self.perm_group.nprint(writer);
                 try self.perm_other.nprint(writer);
             }
+
+            pub fn eql(self: Mode, other: Mode) bool {
+                if (self.type != other.type) return false;
+                if (self.perm_user != other.perm_user) return false;
+                if (self.perm_group != other.perm_group) return false;
+                if (self.perm_other != other.perm_other) return false;
+                return true;
+            }
         };
 
-        pub const Type = enum(u16) {
+        pub const Type = enum(u8) {
             file = 100,
             directory = 40,
             submodule = 160,
