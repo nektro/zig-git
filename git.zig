@@ -494,7 +494,7 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
         var n: usize = 0;
         while (n < i) : (n += 1) i -= @intFromBool(overview.items[n].action == .T);
         try diffs.append(.{
-            .index = @splat(.{ .id = undefined }),
+            .index = @splat(.{ .id = "0000000000000000000000000000000000000000" }),
             .before_path = overview.items[i].sub_path,
             .after_path = overview.items[i].sub_path,
             .subs = 0,
