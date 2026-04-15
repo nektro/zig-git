@@ -957,8 +957,6 @@ pub const Repository = struct {
         t4.end();
 
         // parse .pack
-        // std.log.debug("pack_index={d} pack_offset={d}", .{ pack_index, pack_offset });
-
         return try r.getPackedObject(arena, oid, pack_index, pack_offset);
     }
 
@@ -983,7 +981,7 @@ pub const Repository = struct {
                     size += (c & 0x7f) << shift;
                     shift += 7;
                 }
-                // std.log.debug("type={s} size={d}", .{ @tagName(ty), size });
+                // std.log.debug("pack_index={d} pack_offset={d} type={s} size={d}", .{ pack_index, pack_offset, @tagName(ty), size });
                 const t2 = tracer.trace(@src(), " 2 {s} {d}", .{ @tagName(ty), size });
                 defer t2.end();
                 switch (ty) {
@@ -1017,13 +1015,11 @@ pub const Repository = struct {
                         const base_pack_offset = pack_offset - offset;
                         const base_obj = try r.getPackedObject(arena, null, pack_index, base_pack_offset);
                         defer r.gpa.free(base_obj.content);
-                        // std.log.debug("base: type={s} content=[{d}]", .{ @tagName(base_obj.type), base_obj.content.len });
                         return r.getDeltadObject(maybe_oid, &packedobj_fbs, size, base_obj);
                     },
                     .ref_delta => {
                         const base_oid = extras.to_hex(packedobj_fbs.takeSlice(20)[0..20].*);
                         const base_obj = (try r.getObject(arena, &base_oid)).?;
-                        // std.log.debug("base: type={s} content=[{d}]", .{ @tagName(base_obj.type), base_obj.content.len });
                         return r.getDeltadObject(maybe_oid, &packedobj_fbs, size, base_obj);
                     },
                 }
@@ -1044,6 +1040,7 @@ pub const Repository = struct {
         // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer(r.gpa));
         try inflate_decompress(compressed_content, &list, r.gpa);
         std.debug.assert(list.items.len == size);
+        // std.log.debug("maybe_oid={?s} size={d}", .{ maybe_oid, size });
         // std.log.debug("transformation data=[{d}]{d}", .{ list.items.len, list.items });
 
         var unpackedobj_fbs = nio.FixedBufferStream([]const u8).init(list.items);
@@ -1079,8 +1076,10 @@ pub const Repository = struct {
                     b.append(if (c2 & mask > 0) unpackedobj_fbs.takeByte() else 0);
                 }
                 const start: u32 = @bitCast(b.items[0..4].*);
-                const nbytes: u24 = @bitCast(b.items[4..7].*);
+                var nbytes: u24 = @bitCast(b.items[4..7].*);
+                if (nbytes == 0) nbytes = 0x10000;
                 // std.log.debug("- copy from base: start={d} nbytes={d}", .{ start, nbytes });
+                // std.log.debug("  - {d} {d}", .{ c2, b.items });
                 const bytes = base_obj.content[start..][0..nbytes];
                 // std.log.debug("{s}\n", .{bytes});
                 try list2.appendSlice(r.gpa, bytes);
@@ -1095,7 +1094,7 @@ pub const Repository = struct {
             }
         }
 
-        // std.log.debug("- done", .{});
+        // std.log.debug("- done {d}", .{list2.items.len});
         // std.log.debug("{s}\n", .{list2.items});
         const _type = base_obj.type;
         const content = try list2.toOwnedSlice(r.gpa);
