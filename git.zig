@@ -1325,9 +1325,9 @@ fn inflate_decompress(in: []const u8, out: *std.ArrayListUnmanaged(u8), allocato
         std.debug.assert(ret != .Z_STREAM_ERROR);
         std.debug.assert(ret == .Z_OK);
     }
+    // std.log.debug("inflate_decompress: -> {*} {d}", .{ in.ptr, in.len });
     strm.next_in = @constCast(in.ptr);
-    strm.avail_in = @intCast(in.len);
-    // std.log.debug("inflate_decompress: -> {*} {d}", .{ strm.next_in, strm.avail_in });
+    strm.avail_in = @truncate(in.len);
 
     while (true) {
         var buf: [16384]u8 = @splat(0);
@@ -1337,7 +1337,6 @@ fn inflate_decompress(in: []const u8, out: *std.ArrayListUnmanaged(u8), allocato
         const ret: ZlibCode = @enumFromInt(z.inflate(&strm, z.Z_SYNC_FLUSH));
         // std.log.debug("inflate_decompress: <- {*} {*} {d} {d} {s}", .{ strm.next_in, strm.next_out, strm.avail_in, strm.avail_out, @tagName(ret) });
         std.debug.assert(ret != .Z_STREAM_ERROR);
-        // if (ret == .Z_BUF_ERROR) std.log.err("{s}", .{strm.msg});
         std.debug.assert(ret != .Z_BUF_ERROR);
         if (ret == .Z_MEM_ERROR) return error.OutOfMemory;
         if (ret == .Z_DATA_ERROR) return error.Z_DATA_ERROR;
