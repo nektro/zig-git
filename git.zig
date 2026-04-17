@@ -917,15 +917,19 @@ pub const Repository = struct {
         const t4 = tracer.trace(@src(), " find pack_index/pack_offset", .{});
         errdefer t4.end();
         const pack_index, const pack_offset = blk: for (r.idx_content.keys(), r.idx_content.values()) |idx_path, idx_content| {
-            const t5 = tracer.trace(@src(), " {s}", .{idx_path});
-            defer t5.end();
             if (std.mem.startsWith(u8, idx_content, "\xfftOc")) {
-                std.debug.assert(std.mem.readInt(u32, idx_content[4..][0..4], .big) == 2);
-                const flfo_table_bytes = idx_content[8..][0 .. 256 * 4];
-                const object_count = std.mem.readInt(u32, flfo_table_bytes[255 * 4 ..][0..4], .big);
-                const name_bytes = idx_content[8..][1024..][0 .. object_count * 20];
-                const crc32_bytes = idx_content[8..][1024..][name_bytes.len..][0 .. object_count * 4];
-                const offset_bytes = idx_content[8..][1024..][name_bytes.len..][crc32_bytes.len..][0 .. object_count * 4];
+                var idx_fbs: nio.FixedBufferStream([]const u8) = .init(idx_content);
+                _ = idx_fbs.takeSlice(4);
+                std.debug.assert(idx_fbs.takeInt(u32, .big) == 2);
+                const fanout_be_bytes = idx_fbs.takeSlice(255 * 4);
+                _ = fanout_be_bytes;
+                const object_count = idx_fbs.takeInt(u32, .big);
+                const name_bytes = idx_fbs.takeSlice(object_count * 20);
+                const crc32_bytes = idx_fbs.takeSlice(object_count * 4);
+                _ = crc32_bytes;
+                const offsets_be = idx_fbs.takeIntSlice(u32, object_count);
+                const largeoffsets_be: []align(1) const u64 = @ptrCast(idx_fbs.rest());
+
                 // std.sort.binarySearch;
                 const i = bll: {
                     var low: usize = 0;
@@ -941,8 +945,11 @@ pub const Repository = struct {
                     }
                     continue;
                 };
-                const pack_offset = std.mem.readInt(u32, offset_bytes[i * 4 ..][0..4], .big);
-                // std.log.debug("found {s} in {s} at offset {d}", .{ oid, idx_path, pack_offset });
+
+                const pack_offset_candidate = @byteSwap(offsets_be[i]);
+                const pack_offset = if (pack_offset_candidate & 0x80000000 == 0) pack_offset_candidate else @byteSwap(largeoffsets_be[pack_offset_candidate & 0x7fffffff]);
+                // std.log.debug("found {s} in {s} at offset {d} {d}", .{ oid, idx_path, pack_offset_candidate, pack_offset });
+
                 const pack_index = r.pack_content.getIndex(idx_path) orelse clk: {
                     var pack_path: [128]u8 = @splat(0);
                     @memcpy(pack_path[0..13], "objects/pack/");
@@ -980,12 +987,12 @@ pub const Repository = struct {
                 const packedobj_content = pack_content[pack_offset..];
                 var packedobj_fbs = nio.FixedBufferStream([]const u8).init(packedobj_content);
                 const PackedObjType = enum(u3) { none, commit, tree, blob, tag, reserved, ofs_delta, ref_delta };
-                var c: usize = packedobj_fbs.takeByte();
+                var c: usize = packedobj_fbs.takeArray(1)[0];
                 const ty: PackedObjType = @enumFromInt((c >> 4) & 7);
                 var size: usize = c & 15;
                 var shift: u6 = 4;
                 while (c & 0x80 > 0) {
-                    c = packedobj_fbs.takeByte();
+                    c = packedobj_fbs.takeArray(1)[0];
                     size += (c & 0x7f) << shift;
                     shift += 7;
                 }
@@ -1015,7 +1022,7 @@ pub const Repository = struct {
                     .ofs_delta => {
                         var offset: usize = 0;
                         while (true) {
-                            const c2: usize = packedobj_fbs.takeByte();
+                            const c2: usize = packedobj_fbs.takeArray(1)[0];
                             offset = (offset << 7) | (c2 & 0x7f);
                             if (c2 & 0x80 == 0) break;
                             offset += 1;
@@ -1058,7 +1065,7 @@ pub const Repository = struct {
 
         var base_size: usize = 0;
         while (true) {
-            const c2: usize = unpackedobj_fbs.takeByte();
+            const c2: usize = unpackedobj_fbs.takeArray(1)[0];
             base_size = (base_size << 7) | (c2 & 0x7f);
             if (c2 & 0x80 == 0) break;
             base_size += 1;
@@ -1067,7 +1074,7 @@ pub const Repository = struct {
 
         var obj_size: usize = 0;
         while (true) {
-            const c2: usize = unpackedobj_fbs.takeByte();
+            const c2: usize = unpackedobj_fbs.takeArray(1)[0];
             obj_size = (obj_size << 7) | (c2 & 0x7f);
             if (c2 & 0x80 == 0) break;
             obj_size += 1;
@@ -1075,13 +1082,13 @@ pub const Repository = struct {
         // std.log.debug("obj_size={d}", .{obj_size});
 
         while (unpackedobj_fbs.pos < unpackedobj_fbs.buffer.len) {
-            const c2 = unpackedobj_fbs.takeByte();
+            const c2 = unpackedobj_fbs.takeArray(1)[0];
             if (c2 & 0x80 > 0) {
                 // copy range from base
                 var b: extras.RingBuffer(u8, 7) = .{};
                 for (0..7) |i| {
                     const mask = @as(u8, 1) << @intCast(i);
-                    b.append(if (c2 & mask > 0) unpackedobj_fbs.takeByte() else 0);
+                    b.append(if (c2 & mask > 0) unpackedobj_fbs.takeArray(1)[0] else 0);
                 }
                 const start: u32 = @bitCast(b.items[0..4].*);
                 var nbytes: u24 = @bitCast(b.items[4..7].*);
