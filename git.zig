@@ -976,7 +976,7 @@ pub const Repository = struct {
     }
 
     fn getPackedObject(r: *Repository, arena: std.mem.Allocator, maybe_oid: ?Id, pack_index: usize, pack_offset: usize) !GitObject {
-        const t = tracer.trace(@src(), " {?s} {d} {d}", .{ maybe_oid, pack_index, pack_offset });
+        const t = tracer.trace(@src(), " {?s} {d} {d} {s}", .{ maybe_oid, pack_index, pack_offset, r.pack_content.keys()[pack_index] });
         defer t.end();
 
         const pack_content = r.pack_content.values()[pack_index];
