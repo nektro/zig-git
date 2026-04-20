@@ -61,6 +61,14 @@ pub const AnyId = union(RefType) {
     }
 };
 
+pub const CommitIdx = enum(u32) {
+    _,
+
+    pub fn reify(self: CommitIdx, r: *const Repository) *const Commit {
+        return &r.commits.values()[@intFromEnum(self)];
+    }
+};
+
 pub fn version(alloc: std.mem.Allocator) !string {
     const result = try std.process.Child.run(.{
         .allocator = alloc,
@@ -1144,24 +1152,25 @@ pub const Repository = struct {
         return (try r.getBlob(arena, .{ .id = id })).?;
     }
 
-    pub fn getCommit(r: *Repository, arena: std.mem.Allocator, id: CommitId) !?struct { CommitId, Commit } {
+    pub fn getCommit(r: *Repository, arena: std.mem.Allocator, id: CommitId) !?struct { CommitId, CommitIdx } {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
-        if (r.commits.getPtr(id.id)) |val| {
-            return .{ id, val.* };
+        if (r.commits.getIndex(id.id)) |idx| {
+            return .{ id, @enumFromInt(idx) };
         }
         if (try r.getObject(arena, id.id)) |obj| {
             if (obj.type == .commit) {
                 const commit = try parseCommit(arena, obj.content);
                 try r.commits.put(r.gpa, id.id, commit);
-                return .{ id, commit };
+                const idx = r.commits.values().len - 1;
+                return .{ id, @enumFromInt(idx) };
             }
         }
         return null;
     }
 
-    pub fn getCommitA(r: *Repository, arena: std.mem.Allocator, id: Id) !Commit {
+    pub fn getCommitA(r: *Repository, arena: std.mem.Allocator, id: Id) !CommitIdx {
         return (try r.getCommit(arena, .{ .id = id })).?.@"1";
     }
 
