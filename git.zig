@@ -1271,7 +1271,10 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), "", .{});
         defer t.end();
 
-        var file = try r.gitdir.openFile("packed-refs", .{});
+        var file = r.gitdir.openFile("packed-refs", .{}) catch |err| switch (err) {
+            error.ENOENT => return,
+            else => |e| return e,
+        };
         defer file.close();
         const content = try file.mmap();
         defer nfs.munmap(content);
