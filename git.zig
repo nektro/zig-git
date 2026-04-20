@@ -1318,6 +1318,66 @@ pub const Repository = struct {
             try map.put(arena, label, oid[0..40]);
         }
     }
+
+    pub fn getTreeCommits(r: *Repository, arena: std.mem.Allocator, base_oid: CommitId, dir_path: []const u8) ![]const CommitId {
+        const t = tracer.trace(@src(), "", .{});
+        defer t.end();
+
+        const base_idx = try r.getCommitA(arena, base_oid.id);
+        const base = base_idx.reify(r);
+        const base_tree = try traverseTo(r, arena, base.tree, dir_path);
+        const total = base_tree.children.len;
+
+        var found: usize = 0;
+        var result: std.StringArrayHashMapUnmanaged(CommitId) = .empty;
+        defer result.deinit(r.gpa);
+        for (base_tree.children) |item| try result.put(r.gpa, item.name, undefined);
+
+        var set: std.bit_set.DynamicBitSetUnmanaged = try .initEmpty(r.gpa, total);
+        defer set.deinit(r.gpa);
+
+        var searched: usize = 0;
+        var commit_id_prev = base_oid;
+        var commit_id = base_oid;
+        var commit_idx = base_idx;
+        var commit = base;
+        while (true) {
+            if (commit.parents.len == 0) break;
+            commit_id, commit_idx = (try r.getCommit(arena, commit.parents[0])).?;
+            searched += 1;
+            defer commit_id_prev = commit_id;
+            commit = commit_idx.reify(r);
+            const tree = try traverseTo(r, arena, commit.tree, dir_path);
+            for (result.keys(), 0..) |k, i| {
+                if (set.isSet(i)) continue;
+                const original = base_tree.get(k).?;
+                const new = tree.get(k);
+                if (new == null) {
+                    found += 1;
+                    result.putAssumeCapacity(k, commit_id_prev);
+                    set.set(i);
+                    // std.log.debug("found [{d}/{d}] object after searching {d} commits", .{ found, total, searched });
+                    continue;
+                }
+                if (!std.mem.eql(u8, new.?.id.erase(), original.id.erase())) {
+                    found += 1;
+                    result.putAssumeCapacity(k, commit_id_prev);
+                    set.set(i);
+                    // std.log.debug("found [{d}/{d}] object after searching {d} commits", .{ found, total, searched });
+                    continue;
+                }
+            }
+            if (set.count() == total) {
+                break;
+            }
+        }
+        for (0..total, result.values()) |i, *v| {
+            if (!set.isSet(i)) {
+                v.* = base_oid;
+            }
+        }
+        return try arena.dupe(CommitId, result.values());
+    }
 };
 
 const z = @cImport({
@@ -1372,3 +1432,14 @@ const ZlibCode = enum(c_int) {
     Z_BUF_ERROR = -5,
     Z_VERSION_ERROR = -6,
 };
+
+fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, dir_path: []const u8) !Tree {
+    var tree = try r.getTreeA(arena, treestart_id.id);
+    if (dir_path.len == 0) return tree;
+    var iter = std.mem.splitScalar(u8, dir_path, '/');
+    while (iter.next()) |segment| {
+        const o = tree.get(segment).?;
+        tree = try r.getTreeA(arena, o.id.tree.id);
+    }
+    return tree;
+}
