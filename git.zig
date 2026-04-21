@@ -1332,6 +1332,8 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), "", .{});
         defer t.end();
 
+        // const start = std.time.milliTimestamp();
+
         const base_idx = try r.getCommitA(arena, base_oid.id);
         const base = base_idx.reify(r);
         const base_tree = try traverseTo(r, arena, base.tree, dir_path);
@@ -1385,6 +1387,10 @@ pub const Repository = struct {
                 v.* = base_oid;
             }
         }
+
+        // const end = std.time.milliTimestamp();
+        // std.log.debug("found {d} in {d}ms", .{ total, end - start });
+
         return try arena.dupe(CommitId, result.values());
     }
 };
