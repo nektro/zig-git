@@ -1365,14 +1365,14 @@ pub const Repository = struct {
                     found += 1;
                     result.putAssumeCapacity(k, commit_id_prev);
                     set.set(i);
-                    // std.log.debug("found [{d}/{d}] object after searching {d} commits", .{ found, total, searched });
+                    // std.log.debug("found [{d}/{d}] objects after searching {d} commits", .{ found, total, searched });
                     continue;
                 }
                 if (!std.mem.eql(u8, new.?.id.erase(), original.id.erase())) {
                     found += 1;
                     result.putAssumeCapacity(k, commit_id_prev);
                     set.set(i);
-                    // std.log.debug("found [{d}/{d}] object after searching {d} commits", .{ found, total, searched });
+                    // std.log.debug("found [{d}/{d}] objects after searching {d} commits", .{ found, total, searched });
                     continue;
                 }
             }
