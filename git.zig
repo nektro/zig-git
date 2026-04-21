@@ -828,7 +828,8 @@ pub const BlameIterator = struct {
 pub const Repository = struct {
     gitdir: nfs.Dir,
     gpa: std.mem.Allocator,
-    unpacked_objects: std.StringArrayHashMapUnmanaged(GitObject),
+    unpacked_loose_objects: std.StringArrayHashMapUnmanaged(GitObject),
+    unpacked_objects: std.AutoArrayHashMapUnmanaged(u64, GitObject),
     idx_content: std.StringArrayHashMapUnmanaged([]const u8),
     pack_content: std.StringArrayHashMapUnmanaged([]const u8),
     commits: std.StringArrayHashMapUnmanaged(Commit),
@@ -839,6 +840,7 @@ pub const Repository = struct {
         return .{
             .gitdir = gitdir,
             .gpa = gpa,
+            .unpacked_loose_objects = .empty,
             .unpacked_objects = .empty,
             .idx_content = .empty,
             .pack_content = .empty,
@@ -849,6 +851,8 @@ pub const Repository = struct {
     }
 
     pub fn deinit(r: *Repository) void {
+        for (r.unpacked_loose_objects.values()) |v| r.gpa.free(v.content);
+        r.unpacked_loose_objects.deinit(r.gpa);
         for (r.unpacked_objects.values()) |v| r.gpa.free(v.content);
         r.unpacked_objects.deinit(r.gpa);
         for (r.idx_content.values()) |v| nfs.munmap(v);
@@ -865,7 +869,7 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), " {s}", .{oid});
         defer t.end();
 
-        if (r.unpacked_objects.get(oid)) |obj| {
+        if (r.unpacked_loose_objects.get(oid)) |obj| {
             return obj;
         }
         if (oid.len == 40) blk: { //sha1 object
@@ -893,7 +897,7 @@ pub const Repository = struct {
             const content = try list.toOwnedSlice(r.gpa);
             std.debug.assert(content.len == content_len);
             const obj: GitObject = .{ .type = _type, .content = content };
-            try r.unpacked_objects.put(r.gpa, oid, obj);
+            try r.unpacked_loose_objects.put(r.gpa, oid, obj);
             return obj;
         }
 
@@ -987,6 +991,9 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), " {?s} {d} {d} {s}", .{ maybe_oid, pack_index, pack_offset, r.pack_content.keys()[pack_index] });
         defer t.end();
 
+        const key = std.hash.Wyhash.hash(0, &(std.mem.toBytes(pack_index) ++ std.mem.toBytes(pack_offset)));
+        if (r.unpacked_objects.get(key)) |o| return o;
+
         const pack_content = r.pack_content.values()[pack_index];
         if (!std.mem.eql(u8, pack_content[0..4], "PACK")) return error.InvalidGitPack;
         const pack_version = std.mem.readInt(u32, pack_content[4..][0..4], .big);
@@ -1024,7 +1031,7 @@ pub const Repository = struct {
                         const _type = std.meta.stringToEnum(RefType, @tagName(ty)).?;
                         const content = try list.toOwnedSlice(r.gpa);
                         const obj: GitObject = .{ .type = _type, .content = content };
-                        if (maybe_oid) |oid| try r.unpacked_objects.put(r.gpa, oid, obj);
+                        try r.unpacked_objects.put(r.gpa, key, obj);
                         return obj;
                     },
                     .ofs_delta => {
@@ -1037,13 +1044,12 @@ pub const Repository = struct {
                         }
                         const base_pack_offset = pack_offset - offset;
                         const base_obj = try r.getPackedObject(arena, null, pack_index, base_pack_offset);
-                        defer r.gpa.free(base_obj.content);
-                        return r.getDeltadObject(maybe_oid, &packedobj_fbs, size, base_obj);
+                        return r.getDeltadObject(maybe_oid, key, &packedobj_fbs, size, base_obj);
                     },
                     .ref_delta => {
                         const base_oid = extras.to_hex(packedobj_fbs.takeSlice(20)[0..20].*);
                         const base_obj = (try r.getObject(arena, &base_oid)).?;
-                        return r.getDeltadObject(maybe_oid, &packedobj_fbs, size, base_obj);
+                        return r.getDeltadObject(maybe_oid, key, &packedobj_fbs, size, base_obj);
                     },
                 }
                 comptime unreachable;
@@ -1055,7 +1061,7 @@ pub const Repository = struct {
         }
     }
 
-    fn getDeltadObject(r: *Repository, maybe_oid: ?Id, packedobj_fbs: *nio.FixedBufferStream([]const u8), size: usize, base_obj: GitObject) !GitObject {
+    fn getDeltadObject(r: *Repository, maybe_oid: ?Id, key: u64, packedobj_fbs: *nio.FixedBufferStream([]const u8), size: usize, base_obj: GitObject) !GitObject {
         const compressed_content = packedobj_fbs.rest();
         var list: std.ArrayListUnmanaged(u8) = .empty;
         defer list.deinit(r.gpa);
@@ -1122,7 +1128,10 @@ pub const Repository = struct {
         const _type = base_obj.type;
         const content = try list2.toOwnedSlice(r.gpa);
         const obj: GitObject = .{ .type = _type, .content = content };
-        if (maybe_oid) |oid| try r.unpacked_objects.put(r.gpa, oid, obj);
+        if (maybe_oid) |oid|
+            try r.unpacked_loose_objects.put(r.gpa, oid, obj)
+        else
+            try r.unpacked_objects.put(r.gpa, key, obj);
         return obj;
     }
 
