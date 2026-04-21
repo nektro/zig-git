@@ -87,7 +87,8 @@ test {
     defer git_dir.close();
     var repo: git.Repository = .init(git_dir, gpa);
     defer repo.deinit();
-    const c = try repo.getCommitA(alloc, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e");
+    const d = try repo.getCommitA(alloc, "a542da41f1f0c59fdd0e1527cf5ff9de3f6a0c8e");
+    const c = d.reify(&repo);
     try expect(c.tree.id).toEqualString("5403fecad0fde9120535321f222a061abc2849d9");
     try expect(c.parents.len).toEqual(1);
     try expect(c.parents[0].id).toEqualString("c39f57f6bb01664a7146ddbfc3debe76ec135f44");
