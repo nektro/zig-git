@@ -1196,10 +1196,12 @@ pub const Repository = struct {
         }
         if (try r.getObject(arena, id.id)) |obj| {
             if (obj.type == .tree) {
-                var children: std.MultiArrayList(Tree.Object) = .empty;
+                const MAL = std.MultiArrayList(Tree.Object);
+                var children: MAL = .empty;
                 errdefer children.deinit(r.gpa);
                 try children.ensureUnusedCapacity(r.gpa, 33);
                 var i: usize = 0;
+                var slice = children.slice();
                 while (i < obj.content.len) {
                     const mode_end = std.mem.indexOfScalar(u8, obj.content[i..], ' ').?;
                     const mode = obj.content[i..][0..mode_end];
@@ -1218,7 +1220,15 @@ pub const Repository = struct {
                     @memcpy(mode_buf[6 - mode.len ..], mode);
                     const mode_real = try parseTreeMode(&mode_buf);
 
-                    try children.append(r.gpa, .{
+                    const j = slice.len;
+                    if (j == slice.capacity) {
+                        @branchHint(.cold);
+                        try children.ensureUnusedCapacity(r.gpa, 1);
+                        slice = children.slice();
+                    }
+                    children.len += 1;
+                    slice.len += 1;
+                    slice.set(j, .{
                         .mode = mode_real,
                         .name = name,
                         .id = switch (mode_real.type) {
@@ -1232,7 +1242,7 @@ pub const Repository = struct {
                 }
 
                 const S = struct {
-                    list: *std.MultiArrayList(Tree.Object),
+                    list: *MAL,
 
                     pub fn lessThan(s: @This(), a: usize, b: usize) bool {
                         const items = s.list.items(.name);
@@ -1241,7 +1251,7 @@ pub const Repository = struct {
                     pub fn swap(s: @This(), a: usize, b: usize) void {
                         // Remove after updating to Zig 0.17. Ref: https://codeberg.org/ziglang/zig/pulls/32016
                         inline for (@typeInfo(Tree.Object).@"struct".fields) |field| {
-                            const its = s.list.items(@field(std.MultiArrayList(Tree.Object).Field, field.name));
+                            const its = s.list.items(@field(MAL.Field, field.name));
                             std.mem.swap(@FieldType(Tree.Object, field.name), &its[a], &its[b]);
                         }
                     }
