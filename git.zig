@@ -270,15 +270,19 @@ fn parseTreeMode(input: string) !Tree.Object.Mode {
 }
 
 pub const Tree = struct {
-    children: []const Object,
+    children: std.MultiArrayList(Object).Slice,
 
     pub fn get(self: Tree, name: string) ?Object {
-        for (self.children) |item| {
-            if (std.mem.eql(u8, item.name, name)) {
-                return item;
+        if (self.children.len <= 1000) {
+            for (self.children.items(.name), 0..) |a_name, i| {
+                if (std.mem.eql(u8, a_name, name)) {
+                    return self.children.get(i);
+                }
             }
+            return null;
         }
-        return null;
+        const i = std.sort.binarySearch([]const u8, self.children.items(.name), name, extras.compareFnSlice(u8)) orelse return null;
+        return self.children.get(i);
     }
 
     pub fn getBlob(self: Tree, name: string) ?Object {
@@ -288,9 +292,9 @@ pub const Tree = struct {
     }
 
     pub fn find(self: Tree, name: string) ?Object {
-        for (self.children) |item| {
-            if (std.ascii.eqlIgnoreCase(item.name, name)) {
-                return item;
+        for (self.children.items(.name), 0..) |item, i| {
+            if (std.ascii.eqlIgnoreCase(item, name)) {
+                return self.children.get(i);
             }
         }
         return null;
@@ -860,7 +864,7 @@ pub const Repository = struct {
         for (r.pack_content.values()) |v| nfs.munmap(v);
         r.pack_content.deinit(r.gpa);
         r.commits.deinit(r.gpa);
-        for (r.trees.values()) |v| r.gpa.free(v.children);
+        for (r.trees.values()) |*v| v.children.deinit(r.gpa);
         r.trees.deinit(r.gpa);
         r.tags.deinit(r.gpa);
     }
@@ -1192,8 +1196,9 @@ pub const Repository = struct {
         }
         if (try r.getObject(arena, id.id)) |obj| {
             if (obj.type == .tree) {
-                var children = std.ArrayList(Tree.Object).init(r.gpa);
-                errdefer children.deinit();
+                var children: std.MultiArrayList(Tree.Object) = .empty;
+                errdefer children.deinit(r.gpa);
+                try children.ensureUnusedCapacity(r.gpa, 33);
                 var i: usize = 0;
                 while (i < obj.content.len) {
                     const mode_end = std.mem.indexOfScalar(u8, obj.content[i..], ' ').?;
@@ -1213,7 +1218,7 @@ pub const Repository = struct {
                     @memcpy(mode_buf[6 - mode.len ..], mode);
                     const mode_real = try parseTreeMode(&mode_buf);
 
-                    try children.append(.{
+                    try children.append(r.gpa, .{
                         .mode = mode_real,
                         .name = name,
                         .id = switch (mode_real.type) {
@@ -1225,7 +1230,26 @@ pub const Repository = struct {
                         },
                     });
                 }
-                const tree: Tree = .{ .children = try children.toOwnedSlice() };
+
+                const S = struct {
+                    list: *std.MultiArrayList(Tree.Object),
+
+                    pub fn lessThan(s: @This(), a: usize, b: usize) bool {
+                        const items = s.list.items(.name);
+                        return std.mem.order(u8, items[a], items[b]) == .lt;
+                    }
+                    pub fn swap(s: @This(), a: usize, b: usize) void {
+                        // Remove after updating to Zig 0.17. Ref: https://codeberg.org/ziglang/zig/pulls/32016
+                        inline for (@typeInfo(Tree.Object).@"struct".fields) |field| {
+                            const its = s.list.items(@field(std.MultiArrayList(Tree.Object).Field, field.name));
+                            std.mem.swap(@FieldType(Tree.Object, field.name), &its[a], &its[b]);
+                        }
+                    }
+                };
+                if (children.len > 1000) std.mem.sortContext(0, children.len, S{ .list = &children });
+
+                var tree: Tree = .{ .children = children.toOwnedSlice() };
+                errdefer tree.children.deinit(r.gpa);
                 try r.trees.put(r.gpa, id.id, tree);
                 return .{ id, tree };
             }
@@ -1342,7 +1366,7 @@ pub const Repository = struct {
         var found: usize = 0;
         var result: std.StringArrayHashMapUnmanaged(CommitId) = .empty;
         defer result.deinit(r.gpa);
-        for (base_tree.children) |item| try result.put(r.gpa, item.name, undefined);
+        for (base_tree.children.items(.name)) |name| try result.put(r.gpa, name, undefined);
 
         var set: std.bit_set.DynamicBitSetUnmanaged = try .initEmpty(r.gpa, total);
         defer set.deinit(r.gpa);
