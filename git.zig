@@ -242,20 +242,6 @@ fn parseAt(time_part: string, tz_part: string) time.DateTime {
     return at;
 }
 
-pub const Commit = struct {
-    tree: TreeId,
-    parents: []const CommitId,
-    author: UserAndAt,
-    committer: UserAndAt,
-    message: string,
-};
-
-pub const UserAndAt = struct {
-    name: string,
-    email: string,
-    at: time.DateTime,
-};
-
 fn parseTreeMode(input: string) !Tree.Object.Mode {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
@@ -268,133 +254,6 @@ fn parseTreeMode(input: string) !Tree.Object.Mode {
         .perm_other = @bitCast(try extras.parseDigits(u3, input[5..][0..1], 8)),
     };
 }
-
-pub const Tree = struct {
-    children: MultiArrayList(Object),
-
-    pub fn get(self: Tree, name: string) ?Object {
-        if (self.children.len() <= 1000) {
-            for (self.children.items.name, 0..) |a_name, i| {
-                if (std.mem.eql(u8, a_name, name)) {
-                    return self.children.get(i);
-                }
-            }
-            return null;
-        }
-        const i = std.sort.binarySearch([]const u8, self.children.items.name, name, extras.compareFnSlice(u8)) orelse return null;
-        return self.children.get(i);
-    }
-
-    pub fn getBlob(self: Tree, name: string) ?Object {
-        const o = self.get(name) orelse return null;
-        if (o.id != .blob) return null;
-        return o;
-    }
-
-    pub fn find(self: Tree, name: string) ?Object {
-        for (self.children.items.name, 0..) |item, i| {
-            if (std.ascii.eqlIgnoreCase(item, name)) {
-                return self.children.get(i);
-            }
-        }
-        return null;
-    }
-
-    pub fn findBlob(self: Tree, name: string) ?Object {
-        const o = self.find(name) orelse return null;
-        if (o.id != .blob) return null;
-        return o;
-    }
-
-    pub const Object = struct {
-        mode: Mode,
-        id: AnyId,
-        name: [:0]const u8,
-
-        pub const Mode = struct {
-            type: Type,
-            perm_user: Perm,
-            perm_group: Perm,
-            perm_other: Perm,
-
-            pub fn format(self: Mode, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
-                _ = fmt;
-                _ = options;
-                try writer.print("{}", .{self.type});
-                try writer.print("{}", .{self.perm_user});
-                try writer.print("{}", .{self.perm_group});
-                try writer.print("{}", .{self.perm_other});
-            }
-
-            pub fn nprint(self: Mode, writer: anytype) !void {
-                try self.type.nprint(writer);
-                try self.perm_user.nprint(writer);
-                try self.perm_group.nprint(writer);
-                try self.perm_other.nprint(writer);
-            }
-
-            pub fn eql(self: Mode, other: Mode) bool {
-                if (self.type != other.type) return false;
-                if (self.perm_user != other.perm_user) return false;
-                if (self.perm_group != other.perm_group) return false;
-                if (self.perm_other != other.perm_other) return false;
-                return true;
-            }
-        };
-
-        pub const Type = enum(u8) {
-            file = 100,
-            directory = 40,
-            submodule = 160,
-            symlink = 120,
-            none = 0,
-
-            pub fn format(self: Type, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
-                _ = fmt;
-                _ = options;
-                try writer.writeByte(switch (self) {
-                    .file => '-',
-                    .directory => 'd',
-                    .submodule => 'm',
-                    .symlink => '-',
-                    .none => '-',
-                });
-            }
-
-            pub fn nprint(self: Type, writer: anytype) !void {
-                try writer.writeAll(&.{switch (self) {
-                    .file => '-',
-                    .directory => 'd',
-                    .submodule => 'm',
-                    .symlink => '-',
-                    .none => '-',
-                }});
-            }
-        };
-
-        pub const Perm = packed struct(u3) {
-            execute: bool,
-            write: bool,
-            read: bool,
-
-            pub fn format(self: Perm, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
-                _ = fmt;
-                _ = options;
-                try writer.writeByte(if (self.read) 'r' else '-');
-                try writer.writeByte(if (self.write) 'w' else '-');
-                try writer.writeByte(if (self.execute) 'x' else '-');
-            }
-
-            pub fn nprint(self: Perm, writer: anytype) !void {
-                try writer.writeAll(&.{
-                    if (self.read) 'r' else '-',
-                    if (self.write) 'w' else '-',
-                    if (self.execute) 'x' else '-',
-                });
-            }
-        };
-    };
-};
 
 // TODO make this inspect .git manually
 // TODO make this return a Reader when we implement it ourselves
@@ -685,11 +544,6 @@ pub const TreeDiff = struct {
     };
 };
 
-pub const Ref = struct {
-    oid: Id,
-    label: string,
-};
-
 pub fn parseTag(tagfile: string) !Tag {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
@@ -715,13 +569,6 @@ pub fn parseTag(tagfile: string) !Tag {
     result.message = iter.rest();
     return result;
 }
-
-pub const Tag = struct {
-    object: Id,
-    type: RefType,
-    tagger: ?UserAndAt,
-    message: string,
-};
 
 // TODO make this inspect .git/objects
 pub fn getBlame(alloc: std.mem.Allocator, dir: nfs.Dir, at: CommitId, sub_path: string) !string {
@@ -1492,6 +1339,159 @@ fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, di
     }
     return tree;
 }
+
+pub const Tree = struct {
+    children: MultiArrayList(Object),
+
+    pub fn get(self: Tree, name: string) ?Object {
+        if (self.children.len() <= 1000) {
+            for (self.children.items.name, 0..) |a_name, i| {
+                if (std.mem.eql(u8, a_name, name)) {
+                    return self.children.get(i);
+                }
+            }
+            return null;
+        }
+        const i = std.sort.binarySearch([]const u8, self.children.items.name, name, extras.compareFnSlice(u8)) orelse return null;
+        return self.children.get(i);
+    }
+
+    pub fn getBlob(self: Tree, name: string) ?Object {
+        const o = self.get(name) orelse return null;
+        if (o.id != .blob) return null;
+        return o;
+    }
+
+    pub fn find(self: Tree, name: string) ?Object {
+        for (self.children.items.name, 0..) |item, i| {
+            if (std.ascii.eqlIgnoreCase(item, name)) {
+                return self.children.get(i);
+            }
+        }
+        return null;
+    }
+
+    pub fn findBlob(self: Tree, name: string) ?Object {
+        const o = self.find(name) orelse return null;
+        if (o.id != .blob) return null;
+        return o;
+    }
+
+    pub const Object = struct {
+        mode: Mode,
+        id: AnyId,
+        name: [:0]const u8,
+
+        pub const Mode = struct {
+            type: Type,
+            perm_user: Perm,
+            perm_group: Perm,
+            perm_other: Perm,
+
+            pub fn format(self: Mode, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
+                _ = fmt;
+                _ = options;
+                try writer.print("{}", .{self.type});
+                try writer.print("{}", .{self.perm_user});
+                try writer.print("{}", .{self.perm_group});
+                try writer.print("{}", .{self.perm_other});
+            }
+
+            pub fn nprint(self: Mode, writer: anytype) !void {
+                try self.type.nprint(writer);
+                try self.perm_user.nprint(writer);
+                try self.perm_group.nprint(writer);
+                try self.perm_other.nprint(writer);
+            }
+
+            pub fn eql(self: Mode, other: Mode) bool {
+                if (self.type != other.type) return false;
+                if (self.perm_user != other.perm_user) return false;
+                if (self.perm_group != other.perm_group) return false;
+                if (self.perm_other != other.perm_other) return false;
+                return true;
+            }
+        };
+
+        pub const Type = enum(u8) {
+            file = 100,
+            directory = 40,
+            submodule = 160,
+            symlink = 120,
+            none = 0,
+
+            pub fn format(self: Type, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
+                _ = fmt;
+                _ = options;
+                try writer.writeByte(switch (self) {
+                    .file => '-',
+                    .directory => 'd',
+                    .submodule => 'm',
+                    .symlink => '-',
+                    .none => '-',
+                });
+            }
+
+            pub fn nprint(self: Type, writer: anytype) !void {
+                try writer.writeAll(&.{switch (self) {
+                    .file => '-',
+                    .directory => 'd',
+                    .submodule => 'm',
+                    .symlink => '-',
+                    .none => '-',
+                }});
+            }
+        };
+
+        pub const Perm = packed struct(u3) {
+            execute: bool,
+            write: bool,
+            read: bool,
+
+            pub fn format(self: Perm, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
+                _ = fmt;
+                _ = options;
+                try writer.writeByte(if (self.read) 'r' else '-');
+                try writer.writeByte(if (self.write) 'w' else '-');
+                try writer.writeByte(if (self.execute) 'x' else '-');
+            }
+
+            pub fn nprint(self: Perm, writer: anytype) !void {
+                try writer.writeAll(&.{
+                    if (self.read) 'r' else '-',
+                    if (self.write) 'w' else '-',
+                    if (self.execute) 'x' else '-',
+                });
+            }
+        };
+    };
+};
+
+pub const Commit = struct {
+    tree: TreeId,
+    parents: []const CommitId,
+    author: UserAndAt,
+    committer: UserAndAt,
+    message: string,
+};
+
+pub const UserAndAt = struct {
+    name: string,
+    email: string,
+    at: time.DateTime,
+};
+
+pub const Tag = struct {
+    object: Id,
+    type: RefType,
+    tagger: ?UserAndAt,
+    message: string,
+};
+
+pub const Ref = struct {
+    oid: Id,
+    label: string,
+};
 
 /// Variant on std.MultiArrayList but using an allocation per-field rather than a single for the entire structure.
 fn MultiArrayList(T: type) type {
