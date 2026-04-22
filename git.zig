@@ -309,7 +309,7 @@ pub const Tree = struct {
     pub const Object = struct {
         mode: Mode,
         id: AnyId,
-        name: string,
+        name: [:0]const u8,
 
         pub const Mode = struct {
             type: Type,
