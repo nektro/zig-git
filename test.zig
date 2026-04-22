@@ -143,7 +143,7 @@ test {
     //     .{ .blob = .{ .id = "b229eadbd5d6655c2dfbaca5a5f68f2f8f3c5454" } },
     //     .{ .blob = .{ .id = "bb3f1c135632cfca760bd84fb18acdab8dae8ec3" } },
     // });
-    try expect(try extras.mapBy(alloc, t.children, .name)).toEqualStringSlice(&.{
+    try expect(t.children.items.name).toEqualStringSlice(&.{
         ".gitattributes",
         ".gitignore",
         "LICENSE",
