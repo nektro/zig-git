@@ -270,18 +270,18 @@ fn parseTreeMode(input: string) !Tree.Object.Mode {
 }
 
 pub const Tree = struct {
-    children: std.MultiArrayList(Object).Slice,
+    children: MultiArrayList(Object),
 
     pub fn get(self: Tree, name: string) ?Object {
-        if (self.children.len <= 1000) {
-            for (self.children.items(.name), 0..) |a_name, i| {
+        if (self.children.len() <= 1000) {
+            for (self.children.items.name, 0..) |a_name, i| {
                 if (std.mem.eql(u8, a_name, name)) {
                     return self.children.get(i);
                 }
             }
             return null;
         }
-        const i = std.sort.binarySearch([]const u8, self.children.items(.name), name, extras.compareFnSlice(u8)) orelse return null;
+        const i = std.sort.binarySearch([]const u8, self.children.items.name, name, extras.compareFnSlice(u8)) orelse return null;
         return self.children.get(i);
     }
 
@@ -292,7 +292,7 @@ pub const Tree = struct {
     }
 
     pub fn find(self: Tree, name: string) ?Object {
-        for (self.children.items(.name), 0..) |item, i| {
+        for (self.children.items.name, 0..) |item, i| {
             if (std.ascii.eqlIgnoreCase(item, name)) {
                 return self.children.get(i);
             }
@@ -1196,12 +1196,11 @@ pub const Repository = struct {
         }
         if (try r.getObject(arena, id.id)) |obj| {
             if (obj.type == .tree) {
-                const MAL = std.MultiArrayList(Tree.Object);
+                const MAL = MultiArrayList(Tree.Object);
                 var children: MAL = .empty;
                 errdefer children.deinit(r.gpa);
                 try children.ensureUnusedCapacity(r.gpa, 33);
                 var i: usize = 0;
-                var slice = children.slice();
                 while (i < obj.content.len) {
                     const mode_end = std.mem.indexOfScalar(u8, obj.content[i..], ' ').?;
                     const mode = obj.content[i..][0..mode_end];
@@ -1220,15 +1219,7 @@ pub const Repository = struct {
                     @memcpy(mode_buf[6 - mode.len ..], mode);
                     const mode_real = try parseTreeMode(&mode_buf);
 
-                    const j = slice.len;
-                    if (j == slice.capacity) {
-                        @branchHint(.cold);
-                        try children.ensureUnusedCapacity(r.gpa, 1);
-                        slice = children.slice();
-                    }
-                    children.len += 1;
-                    slice.len += 1;
-                    slice.set(j, .{
+                    try children.append(r.gpa, .{
                         .mode = mode_real,
                         .name = name,
                         .id = switch (mode_real.type) {
@@ -1245,21 +1236,20 @@ pub const Repository = struct {
                     list: *MAL,
 
                     pub fn lessThan(s: @This(), a: usize, b: usize) bool {
-                        const items = s.list.items(.name);
+                        const items = s.list.items.name;
                         return std.mem.order(u8, items[a], items[b]) == .lt;
                     }
                     pub fn swap(s: @This(), a: usize, b: usize) void {
                         // Remove after updating to Zig 0.17. Ref: https://codeberg.org/ziglang/zig/pulls/32016
                         inline for (@typeInfo(Tree.Object).@"struct".fields) |field| {
-                            const its = s.list.items(@field(MAL.Field, field.name));
+                            const its = @field(s.list.items, field.name);
                             std.mem.swap(@FieldType(Tree.Object, field.name), &its[a], &its[b]);
                         }
                     }
                 };
-                if (children.len > 1000) std.mem.sortContext(0, children.len, S{ .list = &children });
+                if (children.len() > 1000) std.mem.sortContext(0, children.len(), S{ .list = &children });
 
-                var tree: Tree = .{ .children = children.toOwnedSlice() };
-                errdefer tree.children.deinit(r.gpa);
+                const tree: Tree = .{ .children = children };
                 try r.trees.put(r.gpa, id.id, tree);
                 return .{ id, tree };
             }
@@ -1371,12 +1361,12 @@ pub const Repository = struct {
         const base_idx = try r.getCommitA(arena, base_oid.id);
         const base = base_idx.reify(r);
         const base_tree = (try traverseTo(r, arena, base.tree, dir_path)).?;
-        const total = base_tree.children.len;
+        const total = base_tree.children.len();
 
         var found: usize = 0;
         var result: std.StringArrayHashMapUnmanaged(CommitId) = .empty;
         defer result.deinit(r.gpa);
-        for (base_tree.children.items(.name)) |name| try result.put(r.gpa, name, undefined);
+        for (base_tree.children.items.name) |name| try result.put(r.gpa, name, undefined);
 
         var set: std.bit_set.DynamicBitSetUnmanaged = try .initEmpty(r.gpa, total);
         defer set.deinit(r.gpa);
@@ -1501,4 +1491,117 @@ fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, di
         tree = try r.getTreeA(arena, o.id.tree.id);
     }
     return tree;
+}
+
+/// Variant on std.MultiArrayList but using an allocation per-field rather than a single for the entire structure.
+fn MultiArrayList(T: type) type {
+    return struct {
+        items: Items,
+        capacity: usize,
+
+        comptime Elem: type = T,
+
+        pub const empty: Self = .{
+            .items = .{},
+            .capacity = 0,
+        };
+
+        pub const Self = @This();
+
+        const info = @typeInfo(T).@"struct";
+
+        pub const Items = blk: {
+            var fields: [info.fields.len]std.builtin.Type.StructField = undefined;
+            for (info.fields, 0..) |f, i| {
+                const empty_slice: []f.type = &[_]f.type{};
+                fields[i] = .{
+                    .name = f.name,
+                    .type = []f.type,
+                    .default_value_ptr = @ptrCast(&empty_slice),
+                    .is_comptime = false,
+                    .alignment = @alignOf(f.type),
+                };
+            }
+            const _fields = fields;
+            break :blk @Type(.{
+                .@"struct" = .{
+                    .layout = .auto,
+                    .fields = &_fields,
+                    .decls = &.{},
+                    .is_tuple = false,
+                },
+            });
+        };
+
+        pub fn deinit(self: *const Self, gpa: std.mem.Allocator) void {
+            inline for (info.fields) |f| {
+                gpa.free(@field(self.items, f.name).ptr[0..self.capacity]);
+            }
+        }
+
+        pub fn len(self: *const Self) usize {
+            return @field(self.items, info.fields[0].name).len;
+        }
+
+        pub fn get(self: *const Self, index: usize) T {
+            var result: T = undefined;
+            inline for (info.fields) |f| {
+                @field(result, f.name) = @field(self.items, f.name)[index];
+            }
+            return result;
+        }
+
+        pub fn ensureUnusedCapacity(self: *Self, gpa: std.mem.Allocator, additional_count: usize) !void {
+            return self.ensureTotalCapacity(gpa, self.len() + additional_count);
+        }
+
+        pub fn ensureTotalCapacity(self: *Self, gpa: std.mem.Allocator, new_capacity: usize) !void {
+            if (self.capacity >= new_capacity) return;
+            const actual_new_capacity = growCapacity(self.capacity, new_capacity);
+            const previous_len = self.len();
+            var new_items: Items = .{};
+            inline for (info.fields, 0..) |f, i| {
+                errdefer inline for (info.fields[0..i]) |g| gpa.free(@field(new_items, g.name)[0..actual_new_capacity]);
+                @field(new_items, f.name) = try gpa.alloc(f.type, actual_new_capacity);
+                @field(new_items, f.name).len = previous_len;
+            }
+            inline for (info.fields) |f| {
+                @memcpy(@field(new_items, f.name)[0..previous_len], @field(self.items, f.name)[0..previous_len]);
+            }
+            inline for (info.fields) |f| {
+                gpa.free(@field(self.items, f.name)[0..previous_len]);
+            }
+            self.items = new_items;
+            self.capacity = actual_new_capacity;
+        }
+
+        /// Called when memory growth is necessary. Returns a capacity larger than minimum that grows super-linearly.
+        fn growCapacity(current: usize, minimum: usize) usize {
+            var new = current;
+            while (true) {
+                new +|= new / 2 + init_capacity;
+                if (new >= minimum) return new;
+            }
+        }
+
+        const init_capacity = init: {
+            var max = 1;
+            for (info.fields) |field| max = @as(comptime_int, @max(max, @sizeOf(field.type)));
+            break :init @as(comptime_int, @max(1, std.atomic.cache_line / max));
+        };
+
+        pub fn append(self: *Self, gpa: std.mem.Allocator, elem: T) !void {
+            try self.ensureUnusedCapacity(gpa, 1);
+            self.appendAssumeCapacity(elem);
+        }
+
+        pub fn appendAssumeCapacity(self: *Self, elem: T) void {
+            const plen = self.len();
+            std.debug.assert(plen < self.capacity);
+            inline for (info.fields) |f| {
+                @field(self.items, f.name).len += 1;
+                @field(self.items, f.name)[plen] = @field(elem, f.name);
+            }
+        }
+    };
 }
