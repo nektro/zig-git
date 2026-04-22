@@ -1336,7 +1336,7 @@ pub const Repository = struct {
 
         const base_idx = try r.getCommitA(arena, base_oid.id);
         const base = base_idx.reify(r);
-        const base_tree = try traverseTo(r, arena, base.tree, dir_path);
+        const base_tree = (try traverseTo(r, arena, base.tree, dir_path)).?;
         const total = base_tree.children.len;
 
         var found: usize = 0;
@@ -1358,7 +1358,17 @@ pub const Repository = struct {
             searched += 1;
             defer commit_id_prev = commit_id;
             commit = commit_idx.reify(r);
-            const tree = try traverseTo(r, arena, commit.tree, dir_path);
+            const tree = try traverseTo(r, arena, commit.tree, dir_path) orelse {
+                for (result.keys(), 0..) |k, i| {
+                    if (set.isSet(i)) continue;
+                    found += 1;
+                    result.putAssumeCapacity(k, commit_id_prev);
+                    set.set(i);
+                    // std.log.debug("found [{d}/{d}] objects after searching {d} commits", .{ found, total, searched });
+                    continue;
+                }
+                break;
+            };
             for (result.keys(), 0..) |k, i| {
                 if (set.isSet(i)) continue;
                 const original = base_tree.get(k).?;
@@ -1448,12 +1458,12 @@ const ZlibCode = enum(c_int) {
     Z_VERSION_ERROR = -6,
 };
 
-fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, dir_path: []const u8) !Tree {
+fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, dir_path: []const u8) !?Tree {
     var tree = try r.getTreeA(arena, treestart_id.id);
     if (dir_path.len == 0) return tree;
     var iter = std.mem.splitScalar(u8, dir_path, '/');
     while (iter.next()) |segment| {
-        const o = tree.get(segment).?;
+        const o = tree.get(segment) orelse return null;
         tree = try r.getTreeA(arena, o.id.tree.id);
     }
     return tree;
