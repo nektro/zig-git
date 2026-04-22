@@ -1,6 +1,5 @@
 const std = @import("std");
 const string = []const u8;
-const top = @This();
 const time = @import("time");
 const extras = @import("extras");
 const tracer = @import("tracer");
@@ -1464,6 +1463,91 @@ pub const Tree = struct {
                 });
             }
         };
+    };
+
+    pub fn walk(self: Tree, r: *Repository, arena: std.mem.Allocator) !Walker {
+        var stack: std.ArrayListUnmanaged(Walker.StackItem) = .empty;
+
+        try stack.append(r.gpa, .{
+            .tree = self,
+            .idx = 0,
+            .dirname_len = 0,
+        });
+        return .{
+            .repo = r,
+            .arena = arena,
+            .stack = stack,
+            .name_buffer = .empty,
+        };
+    }
+
+    pub const Walker = struct {
+        repo: *Repository,
+        arena: std.mem.Allocator,
+        stack: std.ArrayListUnmanaged(StackItem),
+        name_buffer: std.ArrayListUnmanaged(u8),
+
+        pub const Entry = struct {
+            obj: Object,
+            path: [:0]const u8,
+        };
+
+        const StackItem = struct {
+            tree: Tree,
+            idx: usize,
+            dirname_len: usize,
+        };
+
+        pub fn next(self: *Walker) !?Walker.Entry {
+            const gpa = self.repo.gpa;
+            const arena = self.arena;
+            while (self.stack.items.len != 0) {
+                var top = &self.stack.items[self.stack.items.len - 1];
+                var containing = top;
+                var dirname_len = top.dirname_len;
+                if (top.idx < top.tree.children.len()) {
+                    const base = top.tree.children.get(top.idx);
+                    top.idx += 1;
+                    self.name_buffer.shrinkRetainingCapacity(dirname_len);
+                    if (self.name_buffer.items.len != 0) {
+                        try self.name_buffer.append(gpa, '/');
+                        dirname_len += 1;
+                    }
+                    try self.name_buffer.ensureUnusedCapacity(gpa, base.name.len + 1);
+                    self.name_buffer.appendSliceAssumeCapacity(base.name);
+                    self.name_buffer.appendAssumeCapacity(0);
+                    if (base.id == .tree) {
+                        const new_tree = try self.repo.getTreeA(arena, base.id.tree.id);
+                        {
+                            // errdefer new_dir.close();
+                            try self.stack.append(gpa, .{
+                                .tree = new_tree,
+                                .idx = 0,
+                                .dirname_len = self.name_buffer.items.len - 1,
+                            });
+                            top = &self.stack.items[self.stack.items.len - 1];
+                            containing = &self.stack.items[self.stack.items.len - 2];
+                        }
+                    }
+                    return .{
+                        .obj = base,
+                        .path = self.name_buffer.items[0 .. self.name_buffer.items.len - 1 :0],
+                    };
+                } else {
+                    var item = self.stack.pop().?;
+                    _ = &item;
+                    // if (self.stack.items.len != 0) item.iter.dir.close();
+                }
+            }
+            return null;
+        }
+
+        pub fn deinit(self: *Walker) void {
+            const gpa = self.repo.gpa;
+            // for (self.stack.items) |*item| item.iter.dir.close();
+            self.stack.deinit(gpa);
+            self.name_buffer.deinit(gpa);
+        }
     };
 };
 
