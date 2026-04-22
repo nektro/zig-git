@@ -197,6 +197,20 @@ test {
 }
 
 test {
+    const gpa = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const git_dir = try nfs.cwd().openDir(".git", .{});
+    defer git_dir.close();
+    var repo: git.Repository = .init(git_dir, gpa);
+    defer repo.deinit();
+    const head_oid = (try git.getHEAD(alloc, git_dir)).?;
+    _ = try repo.getTreeCommits(alloc, head_oid, "");
+    _ = try repo.getTreeCommits(alloc, head_oid, "testdata");
+}
+
+test {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
