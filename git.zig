@@ -1206,7 +1206,8 @@ pub const Repository = struct {
 
         const base_idx = try r.getCommitA(arena, base_oid.id);
         const base = base_idx.reify(r);
-        const base_tree = (try traverseTo(r, arena, base.tree, dir_path)).?;
+        const base_tree_id = (try traverseTo(r, arena, base.tree, dir_path)).?;
+        const base_tree = try r.getTreeA(arena, base_tree_id.id);
         const total = base_tree.children.len();
 
         var found: usize = 0;
@@ -1222,13 +1223,14 @@ pub const Repository = struct {
         var commit_id = base_oid;
         var commit_idx = base_idx;
         var commit = base;
+        var tree_id = base_tree_id;
         while (true) {
             if (commit.parents.len == 0) break;
             commit_id, commit_idx = (try r.getCommit(arena, commit.parents[0])).?;
             searched += 1;
             defer commit_id_prev = commit_id;
             commit = commit_idx.reify(r);
-            const tree = try traverseTo(r, arena, commit.tree, dir_path) orelse {
+            const new_tree_id = try traverseTo(r, arena, commit.tree, dir_path) orelse {
                 for (result.keys(), 0..) |k, i| {
                     if (set.isSet(i)) continue;
                     found += 1;
@@ -1239,6 +1241,9 @@ pub const Repository = struct {
                 }
                 break;
             };
+            if (new_tree_id.eql(tree_id)) continue;
+            tree_id = new_tree_id;
+            const tree = try r.getTreeA(arena, tree_id.id);
             for (result.keys(), 0..) |k, i| {
                 if (set.isSet(i)) continue;
                 const original = base_tree.get(k).?;
@@ -1328,15 +1333,16 @@ const ZlibCode = enum(c_int) {
     Z_VERSION_ERROR = -6,
 };
 
-fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, dir_path: []const u8) !?Tree {
-    var tree = try r.getTreeA(arena, treestart_id.id);
-    if (dir_path.len == 0) return tree;
+fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, dir_path: []const u8) !?TreeId {
+    var id = treestart_id;
+    if (dir_path.len == 0) return id;
     var iter = std.mem.splitScalar(u8, dir_path, '/');
     while (iter.next()) |segment| {
+        const tree = try r.getTreeA(arena, id.id);
         const o = tree.get(segment) orelse return null;
-        tree = try r.getTreeA(arena, o.id.tree.id);
+        id = o.id.tree;
     }
-    return tree;
+    return id;
 }
 
 pub const Tree = struct {
