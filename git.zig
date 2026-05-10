@@ -993,6 +993,10 @@ pub const Repository = struct {
         return (try r.getObjectA(arena, oid)).content;
     }
 
+    pub fn getObjectS(r: *Repository, arena: std.mem.Allocator, oid: Id) !usize {
+        return (try r.getObjectC(arena, oid)).len;
+    }
+
     const GitObject = struct {
         type: RefType,
         content: []const u8,
