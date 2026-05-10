@@ -1416,6 +1416,21 @@ pub const Tree = struct {
                 if (self.perm_other != other.perm_other) return false;
                 return true;
             }
+
+            pub fn intbytes(self: Mode) [6]u8 {
+                var b: [6]u8 = @splat('-');
+                @memcpy(b[0..3], switch (self.type) {
+                    .file => "100",
+                    .directory => "040",
+                    .submodule => "160",
+                    .symlink => "120",
+                    .none => "000",
+                });
+                b[3] = @as(u8, @as(u3, @bitCast(self.perm_user))) + '0';
+                b[4] = @as(u8, @as(u3, @bitCast(self.perm_group))) + '0';
+                b[5] = @as(u8, @as(u3, @bitCast(self.perm_other))) + '0';
+                return b;
+            }
         };
 
         pub const Type = enum(u8) {
