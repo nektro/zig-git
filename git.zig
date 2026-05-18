@@ -331,7 +331,7 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
         const before_tree = ensureObjId(BlobId, jter.next().?);
         const after_tree = ensureObjId(BlobId, jter.next().?);
 
-        var kter = std.mem.splitScalar(u8, jter.next().?, '\t'); // why is there a tab here git. why?
+        var kter = std.mem.splitScalar(u8, jter.rest(), '\t');
         const action_s = kter.next().?;
 
         try overview.append(.{
