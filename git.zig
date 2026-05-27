@@ -5,6 +5,7 @@ const extras = @import("extras");
 const tracer = @import("tracer");
 const nfs = @import("nfs");
 const nio = @import("nio");
+const root = @import("root"); // temp
 
 pub const Id = *const [40]u8;
 
@@ -69,14 +70,10 @@ pub const CommitIdx = enum(u32) {
 };
 
 pub fn version(alloc: std.mem.Allocator) !string {
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .argv = &.{ "git", "--version" },
-        .max_output_bytes = 1024,
-    });
+    const result = try root.child_process.run(alloc, .cwd(), .ignore, .pipe, .pipe, 1024, &.{ "git", "--version" });
     defer alloc.free(result.stdout);
     defer alloc.free(result.stderr);
-    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    std.debug.assert(result.term == .exited and result.term.exited == 0);
     return try alloc.dupe(u8, extras.trimPrefixEnsure(std.mem.trimRight(u8, result.stdout, "\n"), "git version ").?);
 }
 
@@ -137,19 +134,15 @@ pub fn revList(alloc: std.mem.Allocator, dir: nfs.Dir, comptime count: u31, from
     const t = tracer.trace(@src(), "({d}) {s} -- {s}", .{ count, from.id, sub_path });
     defer t.end();
 
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .cwd_dir = dir.to_std(),
-        .argv = &.{
-            "git",
-            "rev-list",
-            "-" ++ std.fmt.comptimePrint("{d}", .{count}),
-            from.id,
-            "--",
-            sub_path,
-        },
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 50, &.{
+        "git",
+        "rev-list",
+        "-" ++ std.fmt.comptimePrint("{d}", .{count}),
+        from.id,
+        "--",
+        sub_path,
     });
-    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    std.debug.assert(result.term == .exited and result.term.exited == 0);
     return std.mem.trimRight(u8, result.stdout, "\n");
 }
 
@@ -161,12 +154,8 @@ pub fn revListAll(alloc: std.mem.Allocator, dir: nfs.Dir, from: CommitId, sub_pa
     const t = tracer.trace(@src(), " {s} -- {s}", .{ from.id, sub_path });
     defer t.end();
 
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "rev-list", from.id, "--", sub_path },
-    });
-    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 50, &.{ "git", "rev-list", from.id, "--", sub_path });
+    std.debug.assert(result.term == .exited and result.term.exited == 0);
     return std.mem.trimRight(u8, result.stdout, "\n");
 }
 
@@ -261,24 +250,14 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, p
     defer t.end();
 
     if (parentid == null) {
-        const result = try std.process.Child.run(.{
-            .allocator = alloc,
-            .cwd_dir = dir.to_std(),
-            // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
-            // result of `printf | git hash-object -t tree --stdin`
-            .argv = &.{ "git", "diff-tree", "-p", "--raw", "--full-index", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id },
-            .max_output_bytes = 1024 * 1024 * 1024,
-        });
-        std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+        // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
+        // result of `printf | git hash-object -t tree --stdin`
+        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "-p", "--raw", "--full-index", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id });
+        std.debug.assert(result.term == .exited and result.term.exited == 0);
         return std.mem.trim(u8, result.stdout, "\n");
     }
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "diff-tree", "-p", "--raw", "--full-index", parentid.?.id, commitid.id },
-        .max_output_bytes = 1024 * 1024 * 1024,
-    });
-    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "-p", "--raw", "--full-index", parentid.?.id, commitid.id });
+    std.debug.assert(result.term == .exited and result.term.exited == 0);
     return std.mem.trim(u8, result.stdout, "\n");
 }
 
@@ -289,24 +268,14 @@ pub fn getTreeDiffPath(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitI
     defer t.end();
 
     if (parentid == null) {
-        const result = try std.process.Child.run(.{
-            .allocator = alloc,
-            .cwd_dir = dir.to_std(),
-            // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
-            // result of `printf | git hash-object -t tree --stdin`
-            .argv = &.{ "git", "diff-tree", "-p", "--raw", "--full-index", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id, "--", path },
-            .max_output_bytes = 1024 * 1024 * 1024,
-        });
-        std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+        // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
+        // result of `printf | git hash-object -t tree --stdin`
+        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "-p", "--raw", "--full-index", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id, "--", path });
+        std.debug.assert(result.term == .exited and result.term.exited == 0);
         return std.mem.trim(u8, result.stdout, "\n");
     }
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "diff-tree", "-p", "--raw", "--full-index", parentid.?.id, commitid.id, "--", path },
-        .max_output_bytes = 1024 * 1024 * 1024,
-    });
-    std.debug.assert(result.term == .Exited and result.term.Exited == 0);
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "-p", "--raw", "--full-index", parentid.?.id, commitid.id, "--", path });
+    std.debug.assert(result.term == .exited and result.term.exited == 0);
     return std.mem.trim(u8, result.stdout, "\n");
 }
 
@@ -574,13 +543,8 @@ pub fn getBlame(alloc: std.mem.Allocator, dir: nfs.Dir, at: CommitId, sub_path: 
     const t = tracer.trace(@src(), " {s} -- {s}", .{ at.id, sub_path });
     defer t.end();
 
-    const result = try std.process.Child.run(.{
-        .allocator = alloc,
-        .cwd_dir = dir.to_std(),
-        .argv = &.{ "git", "blame", "-p", at.id, "--", sub_path },
-        .max_output_bytes = 1024 * 1024 * 1024,
-    });
-    extras.assertLog(result.term == .Exited and result.term.Exited == 0, "{s}", .{result.stderr});
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 1024, &.{ "git", "blame", "-p", at.id, "--", sub_path });
+    extras.assertLog(result.term == .exited and result.term.exited == 0, "{s}", .{result.stderr});
     return result.stdout;
 }
 
