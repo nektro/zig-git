@@ -1214,7 +1214,6 @@ pub const Repository = struct {
             const tree = try r.getTreeA(arena, tree_id.id);
             for (result.keys(), 0..) |k, i| {
                 if (set.isSet(i)) continue;
-                const original = base_tree.get(k).?;
                 const new = tree.get(k);
                 if (new == null) {
                     found += 1;
@@ -1223,7 +1222,7 @@ pub const Repository = struct {
                     // std.log.debug("found [{d}/{d}] objects after searching {d} commits", .{ found, total, searched });
                     continue;
                 }
-                if (!std.mem.eql(u8, new.?.id.erase(), original.id.erase())) {
+                if (!std.mem.eql(u8, new.?.id.erase(), base_tree.children.items.id[i].erase())) {
                     found += 1;
                     result.putAssumeCapacity(k, commit_id_prev);
                     set.set(i);
