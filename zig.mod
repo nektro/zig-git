@@ -11,6 +11,7 @@ dependencies:
   - src: git https://github.com/nektro/zig-nio
 
   - src: git https://github.com/madler/zlib tag-v1.3.2
+    id: 0e2d06bb494bf65ffa1b6d9c9070162631a8b9fac792a899
     license: Zlib
     c_include_dirs:
       -
