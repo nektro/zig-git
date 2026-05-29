@@ -1236,7 +1236,7 @@ pub const Repository = struct {
         }
         for (0..total, result.values()) |i, *v| {
             if (!set.isSet(i)) {
-                v.* = base_oid;
+                v.* = commit_id;
             }
         }
 
