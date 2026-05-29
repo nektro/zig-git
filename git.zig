@@ -1186,7 +1186,7 @@ pub const Repository = struct {
         var set: std.bit_set.DynamicBitSetUnmanaged = try .initEmpty(r.gpa, total);
         defer set.deinit(r.gpa);
 
-        var searched: usize = 0;
+        var searched: usize = 1;
         var commit_id_prev = base_oid;
         var commit_id = base_oid;
         var commit_idx = base_idx;
