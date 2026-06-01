@@ -165,7 +165,7 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
 
     var iter = std.mem.splitScalar(u8, commitfile, '\n');
     var result: Commit = undefined;
-    var parents = std.ArrayList(CommitId).init(alloc);
+    var parents = std.array_list.Managed(CommitId).init(alloc);
     errdefer parents.deinit();
     while (true) {
         const line = iter.next() orelse break;
@@ -284,8 +284,8 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
     defer t.end();
 
     var lineiter = std.mem.splitScalar(u8, input, '\n');
-    var overview = std.ArrayList(TreeDiff.StateLine).init(alloc);
-    var diffs = std.ArrayList(TreeDiff.Diff).init(alloc);
+    var overview = std.array_list.Managed(TreeDiff.StateLine).init(alloc);
+    var diffs = std.array_list.Managed(TreeDiff.Diff).init(alloc);
     var meta = std.mem.zeroes(TreeDiff.Meta);
 
     while (lineiter.next()) |lin| {
