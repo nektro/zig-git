@@ -74,7 +74,7 @@ pub fn version(alloc: std.mem.Allocator) !string {
     defer alloc.free(result.stdout);
     defer alloc.free(result.stderr);
     std.debug.assert(result.term == .exited and result.term.exited == 0);
-    return try alloc.dupe(u8, extras.trimPrefixEnsure(std.mem.trimRight(u8, result.stdout, "\n"), "git version ").?);
+    return try alloc.dupe(u8, extras.trimPrefixEnsure(std.mem.trimEnd(u8, result.stdout, "\n"), "git version ").?);
 }
 
 /// Returns the result of running `git rev-parse HEAD`
@@ -84,7 +84,7 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: nfs.Dir) !?CommitId {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
-    const h = std.mem.trimRight(u8, try dir.readFileAlloc(alloc, "HEAD", 1024), "\n");
+    const h = std.mem.trimEnd(u8, try dir.readFileAlloc(alloc, "HEAD", 1024), "\n");
 
     if (std.mem.startsWith(u8, h, "ref:")) {
         blk: {
@@ -95,7 +95,7 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: nfs.Dir) !?CommitId {
                 error.ENOENT => break :blk,
                 else => |e| return e,
             };
-            return ensureObjId(CommitId, std.mem.trimRight(u8, reffile, "\n"));
+            return ensureObjId(CommitId, std.mem.trimEnd(u8, reffile, "\n"));
         }
         blk: {
             const pckedrfs = dir.readFileAlloc(alloc, "packed-refs", 1024 * 1024 * 1024) catch |err| switch (err) {
@@ -143,7 +143,7 @@ pub fn revList(alloc: std.mem.Allocator, dir: nfs.Dir, comptime count: u31, from
         sub_path,
     });
     std.debug.assert(result.term == .exited and result.term.exited == 0);
-    return std.mem.trimRight(u8, result.stdout, "\n");
+    return std.mem.trimEnd(u8, result.stdout, "\n");
 }
 
 // TODO make this inspect .git/objects manually
@@ -156,7 +156,7 @@ pub fn revListAll(alloc: std.mem.Allocator, dir: nfs.Dir, from: CommitId, sub_pa
 
     const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 50, &.{ "git", "rev-list", from.id, "--", sub_path });
     std.debug.assert(result.term == .exited and result.term.exited == 0);
-    return std.mem.trimRight(u8, result.stdout, "\n");
+    return std.mem.trimEnd(u8, result.stdout, "\n");
 }
 
 pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
@@ -1583,26 +1583,16 @@ fn MultiArrayList(T: type) type {
         const info = @typeInfo(T).@"struct";
 
         pub const Items = blk: {
-            var fields: [info.fields.len]std.builtin.Type.StructField = undefined;
+            var names: [info.fields.len][]const u8 = undefined;
+            var types: [info.fields.len]type = undefined;
+            var attrs: [info.fields.len]std.builtin.Type.StructField.Attributes = undefined;
             for (info.fields, 0..) |f, i| {
                 const empty_slice: []f.type = &[_]f.type{};
-                fields[i] = .{
-                    .name = f.name,
-                    .type = []f.type,
-                    .default_value_ptr = @ptrCast(&empty_slice),
-                    .is_comptime = false,
-                    .alignment = @alignOf(f.type),
-                };
+                names[i] = f.name;
+                types[i] = f.type;
+                attrs[i] = .{ .default_value_ptr = @ptrCast(&empty_slice) };
             }
-            const _fields = fields;
-            break :blk @Type(.{
-                .@"struct" = .{
-                    .layout = .auto,
-                    .fields = &_fields,
-                    .decls = &.{},
-                    .is_tuple = false,
-                },
-            });
+            break :blk @Struct(.auto, null, &names, &types, &attrs);
         };
 
         pub fn deinit(self: *const Self, gpa: std.mem.Allocator) void {
