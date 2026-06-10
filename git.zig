@@ -1170,7 +1170,7 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), "", .{});
         defer t.end();
 
-        // const start = std.time.milliTimestamp();
+        // const start = time.milliTimestamp();
 
         const base_idx = try r.getCommitA(arena, base_oid.id);
         const base = base_idx.reify(r);
@@ -1240,7 +1240,7 @@ pub const Repository = struct {
             }
         }
 
-        // const end = std.time.milliTimestamp();
+        // const end = time.milliTimestamp();
         // std.log.debug("found {d} in {d}ms", .{ total, end - start });
 
         return try arena.dupe(CommitId, result.values());
@@ -1589,7 +1589,7 @@ fn MultiArrayList(T: type) type {
             for (info.fields, 0..) |f, i| {
                 const empty_slice: []f.type = &[_]f.type{};
                 names[i] = f.name;
-                types[i] = f.type;
+                types[i] = []f.type;
                 attrs[i] = .{ .default_value_ptr = @ptrCast(&empty_slice) };
             }
             break :blk @Struct(.auto, null, &names, &types, &attrs);
