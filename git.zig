@@ -1307,6 +1307,7 @@ fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, di
     while (iter.next()) |segment| {
         const tree = try r.getTreeA(arena, id.id);
         const o = tree.get(segment) orelse return null;
+        if (o.id != .tree) return null;
         id = o.id.tree;
     }
     return id;
