@@ -262,6 +262,93 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, p
 }
 
 // TODO make this inspect .git manually
+pub fn getTreeDiffOnlyRaw(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
+    const t = tracer.trace(@src(), "", .{});
+    defer t.end();
+
+    if (parentid == null) {
+        // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
+        // result of `printf | git hash-object -t tree --stdin`
+        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--raw", "-r", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id });
+        std.debug.assert(result.term == .exited and result.term.exited == 0);
+        return std.mem.trim(u8, result.stdout, "\n");
+    }
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--raw", "-r", parentid.?.id, commitid.id });
+    std.debug.assert(result.term == .exited and result.term.exited == 0);
+    return std.mem.trim(u8, result.stdout, "\n");
+}
+
+// TODO make this inspect .git manually
+pub fn getTreeDiffOnlyStat(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
+    const t = tracer.trace(@src(), "", .{});
+    defer t.end();
+
+    if (parentid == null) {
+        // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
+        // result of `printf | git hash-object -t tree --stdin`
+        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--stat", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id });
+        std.debug.assert(result.term == .exited and result.term.exited == 0);
+        return std.mem.trim(u8, result.stdout, "\n");
+    }
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--stat", parentid.?.id, commitid.id });
+    std.debug.assert(result.term == .exited and result.term.exited == 0);
+    return std.mem.trim(u8, result.stdout, "\n");
+}
+
+// TODO make this inspect .git manually
+pub fn getTreeDiffOnlySummary(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
+    const t = tracer.trace(@src(), "", .{});
+    defer t.end();
+
+    if (parentid == null) {
+        // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
+        // result of `printf | git hash-object -t tree --stdin`
+        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--summary", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id });
+        std.debug.assert(result.term == .exited and result.term.exited == 0);
+        return std.mem.trim(u8, result.stdout, "\n");
+    }
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--summary", parentid.?.id, commitid.id });
+    std.debug.assert(result.term == .exited and result.term.exited == 0);
+    return std.mem.trim(u8, result.stdout, "\n");
+}
+
+// TODO make this inspect .git manually
+pub fn getTreeDiffOnlyDiff(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
+    const t = tracer.trace(@src(), "", .{});
+    defer t.end();
+
+    if (parentid == null) {
+        // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
+        // result of `printf | git hash-object -t tree --stdin`
+        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--patch", "--full-index", "--patience", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id });
+        if (!(result.term == .exited and result.term.exited == 0)) std.log.err("{s}", .{result.stderr});
+        std.debug.assert(result.term == .exited and result.term.exited == 0);
+        return std.mem.trim(u8, result.stdout, "\n");
+    }
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--patch", "--full-index", "--patience", parentid.?.id, commitid.id });
+    if (!(result.term == .exited and result.term.exited == 0)) std.log.err("{s}", .{result.stderr});
+    std.debug.assert(result.term == .exited and result.term.exited == 0);
+    return std.mem.trim(u8, result.stdout, "\n");
+}
+
+// TODO make this inspect .git manually
+pub fn getFormatPatch(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
+    const t = tracer.trace(@src(), "", .{});
+    defer t.end();
+
+    if (parentid == null) {
+        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 1024, &.{ "git", "format-patch", "--stdout", "--full-index", "--patience", "--root", commitid.id });
+        if (!(result.term == .exited and result.term.exited == 0)) std.log.err("{s}", .{result.stderr});
+        std.debug.assert(result.term == .exited and result.term.exited == 0);
+        return std.mem.trim(u8, result.stdout, "\n");
+    }
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 1024, &.{ "git", "format-patch", "--stdout", "--full-index", "--patience", parentid.?.id ++ "..." ++ commitid.id });
+    if (!(result.term == .exited and result.term.exited == 0)) std.log.err("{s}", .{result.stderr});
+    std.debug.assert(result.term == .exited and result.term.exited == 0);
+    return std.mem.trim(u8, result.stdout, "\n");
+}
+
+// TODO make this inspect .git manually
 // TODO make this return a Reader when we implement it ourselves
 pub fn getTreeDiffPath(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId, path: []const u8) !string {
     const t = tracer.trace(@src(), "", .{});
