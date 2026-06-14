@@ -761,7 +761,7 @@ pub const Repository = struct {
         for (r.pack_content.values()) |v| nfs.munmap(v);
         r.pack_content.deinit(r.gpa);
         r.commits.deinit(r.gpa);
-        for (r.trees.values()) |*v| v.children.deinit(r.gpa);
+        for (r.trees.values()) |*v| r.gpa.free(v.children);
         r.trees.deinit(r.gpa);
         r.tags.deinit(r.gpa);
     }
@@ -1097,8 +1097,7 @@ pub const Repository = struct {
         }
         if (try r.getObject(arena, id.id)) |obj| {
             if (obj.type == .tree) {
-                const MAL = MultiArrayList(Tree.Object);
-                var children: MAL = .empty;
+                var children: std.ArrayList(Tree.Object) = .empty;
                 errdefer children.deinit(r.gpa);
                 try children.ensureUnusedCapacity(r.gpa, 33);
                 var i: usize = 0;
@@ -1133,24 +1132,9 @@ pub const Repository = struct {
                     });
                 }
 
-                const S = struct {
-                    list: *MAL,
-
-                    pub fn lessThan(s: @This(), a: usize, b: usize) bool {
-                        const items = s.list.items.name;
-                        return std.mem.order(u8, items[a], items[b]) == .lt;
-                    }
-                    pub fn swap(s: @This(), a: usize, b: usize) void {
-                        // Remove after updating to Zig 0.17. Ref: https://codeberg.org/ziglang/zig/pulls/32016
-                        inline for (@typeInfo(Tree.Object).@"struct".fields) |field| {
-                            const its = @field(s.list.items, field.name);
-                            std.mem.swap(@FieldType(Tree.Object, field.name), &its[a], &its[b]);
-                        }
-                    }
-                };
-                if (children.len() > 1000) std.mem.sortContext(0, children.len(), S{ .list = &children });
-
-                const tree: Tree = .{ .children = children };
+                const children_slice = try children.toOwnedSlice(r.gpa);
+                errdefer r.gpa.free(children_slice);
+                const tree: Tree = .{ .children = children_slice };
                 try r.trees.put(r.gpa, id.id, tree);
                 return .{ id, tree };
             }
@@ -1263,12 +1247,12 @@ pub const Repository = struct {
         const base = base_idx.reify(r);
         const base_tree_id = (try traverseTo(r, arena, base.tree, dir_path)).?;
         const base_tree = try r.getTreeA(arena, base_tree_id.id);
-        const total = base_tree.children.len();
+        const total = base_tree.children.len;
 
         var found: usize = 0;
         var result: std.StringArrayHashMapUnmanaged(CommitId) = .empty;
         defer result.deinit(r.gpa);
-        for (base_tree.children.items.name) |name| try result.put(r.gpa, name, undefined);
+        for (base_tree.children) |obj| try result.put(r.gpa, obj.name, undefined);
 
         var set: std.bit_set.DynamicBitSetUnmanaged = try .initEmpty(r.gpa, total);
         defer set.deinit(r.gpa);
@@ -1301,7 +1285,7 @@ pub const Repository = struct {
             const tree = try r.getTreeA(arena, tree_id.id);
             for (result.keys(), 0..) |k, i| {
                 if (set.isSet(i)) continue;
-                const new = tree.get(k);
+                const new = tree.get(k, base_tree.children[i].mode.type);
                 if (new == null) {
                     found += 1;
                     result.putAssumeCapacity(k, commit_id_prev);
@@ -1309,7 +1293,7 @@ pub const Repository = struct {
                     // std.log.debug("found [{d}/{d}] objects after searching {d} commits", .{ found, total, searched });
                     continue;
                 }
-                if (!std.mem.eql(u8, new.?.id.erase(), base_tree.children.items.id[i].erase())) {
+                if (!std.mem.eql(u8, new.?.id.erase(), base_tree.children[i].id.erase())) {
                     found += 1;
                     result.putAssumeCapacity(k, commit_id_prev);
                     set.set(i);
@@ -1393,7 +1377,7 @@ fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, di
     var iter = std.mem.splitScalar(u8, dir_path, '/');
     while (iter.next()) |segment| {
         const tree = try r.getTreeA(arena, id.id);
-        const o = tree.get(segment) orelse return null;
+        const o = tree.get(segment, .directory) orelse return null;
         if (o.id != .tree) return null;
         id = o.id.tree;
     }
@@ -1401,31 +1385,23 @@ fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, di
 }
 
 pub const Tree = struct {
-    children: MultiArrayList(Object),
+    children: []const Object,
 
-    pub fn get(self: Tree, name: string) ?Object {
-        if (self.children.len() <= 1000) {
-            for (self.children.items.name, 0..) |a_name, i| {
-                if (std.mem.eql(u8, a_name, name)) {
-                    return self.children.get(i);
-                }
-            }
-            return null;
-        }
-        const i = std.sort.binarySearch([]const u8, self.children.items.name, name, extras.compareFnSlice(u8)) orelse return null;
-        return self.children.get(i);
+    pub fn get(self: Tree, name: string, hint: Object.Type) ?Object {
+        const i = std.sort.binarySearch(Object, self.children, .{ name, hint }, Object.search) orelse return null;
+        return self.children[i];
     }
 
-    pub fn getBlob(self: Tree, name: string) ?Object {
-        const o = self.get(name) orelse return null;
+    pub fn getBlob(self: Tree, name: string, hint: Object.Type) ?Object {
+        const o = self.get(name, hint) orelse return null;
         if (o.id != .blob) return null;
         return o;
     }
 
     pub fn find(self: Tree, name: string) ?Object {
-        for (self.children.items.name, 0..) |item, i| {
-            if (std.ascii.eqlIgnoreCase(item, name)) {
-                return self.children.get(i);
+        for (self.children, 0..) |item, i| {
+            if (std.ascii.eqlIgnoreCase(item.name, name)) {
+                return self.children[i];
             }
         }
         return null;
@@ -1441,6 +1417,24 @@ pub const Tree = struct {
         mode: Mode,
         id: AnyId,
         name: [:0]const u8,
+
+        fn search(a: struct { []const u8, Type }, b: Object) std.math.Order {
+            if (a[0].ptr != b.name.ptr) {
+                const n = @min(a[0].len, b.name.len);
+                for (a[0][0..n], b.name[0..n]) |lhs_elem, rhs_elem| {
+                    switch (std.math.order(lhs_elem, rhs_elem)) {
+                        .eq => continue,
+                        .lt => return .lt,
+                        .gt => return .gt,
+                    }
+                }
+            }
+            return switch (std.math.order(a[0].len, b.name.len)) {
+                .lt => if (a[1] == .directory) std.math.order('/', b.name[a[0].len]) else .lt,
+                .gt => if (b.mode.type == .directory) std.math.order(a[0][b.name.len], '/') else .gt,
+                .eq => .eq,
+            };
+        }
 
         pub const Mode = struct {
             type: Type,
@@ -1581,8 +1575,8 @@ pub const Tree = struct {
                 var top = &self.stack.items[self.stack.items.len - 1];
                 var containing = top;
                 var dirname_len = top.dirname_len;
-                if (top.idx < top.tree.children.len()) {
-                    const base = top.tree.children.get(top.idx);
+                if (top.idx < top.tree.children.len) {
+                    const base = top.tree.children[top.idx];
                     top.idx += 1;
                     self.name_buffer.shrinkRetainingCapacity(dirname_len);
                     if (self.name_buffer.items.len != 0) {
@@ -1652,106 +1646,3 @@ pub const Ref = struct {
     oid: Id,
     label: string,
 };
-
-/// Variant on std.MultiArrayList but using an allocation per-field rather than a single for the entire structure.
-fn MultiArrayList(T: type) type {
-    return struct {
-        items: Items,
-        capacity: usize,
-
-        comptime Elem: type = T,
-
-        pub const empty: Self = .{
-            .items = .{},
-            .capacity = 0,
-        };
-
-        pub const Self = @This();
-
-        const info = @typeInfo(T).@"struct";
-
-        pub const Items = blk: {
-            var names: [info.fields.len][]const u8 = undefined;
-            var types: [info.fields.len]type = undefined;
-            var attrs: [info.fields.len]std.builtin.Type.StructField.Attributes = undefined;
-            for (info.fields, 0..) |f, i| {
-                const empty_slice: []f.type = &[_]f.type{};
-                names[i] = f.name;
-                types[i] = []f.type;
-                attrs[i] = .{ .default_value_ptr = @ptrCast(&empty_slice) };
-            }
-            break :blk @Struct(.auto, null, &names, &types, &attrs);
-        };
-
-        pub fn deinit(self: *const Self, gpa: std.mem.Allocator) void {
-            inline for (info.fields) |f| {
-                gpa.free(@field(self.items, f.name).ptr[0..self.capacity]);
-            }
-        }
-
-        pub fn len(self: *const Self) usize {
-            return @field(self.items, info.fields[0].name).len;
-        }
-
-        pub fn get(self: *const Self, index: usize) T {
-            var result: T = undefined;
-            inline for (info.fields) |f| {
-                @field(result, f.name) = @field(self.items, f.name)[index];
-            }
-            return result;
-        }
-
-        pub fn ensureUnusedCapacity(self: *Self, gpa: std.mem.Allocator, additional_count: usize) !void {
-            return self.ensureTotalCapacity(gpa, self.len() + additional_count);
-        }
-
-        pub fn ensureTotalCapacity(self: *Self, gpa: std.mem.Allocator, new_capacity: usize) !void {
-            if (self.capacity >= new_capacity) return;
-            const actual_new_capacity = growCapacity(self.capacity, new_capacity);
-            const previous_len = self.len();
-            var new_items: Items = .{};
-            inline for (info.fields, 0..) |f, i| {
-                errdefer inline for (info.fields[0..i]) |g| gpa.free(@field(new_items, g.name)[0..actual_new_capacity]);
-                @field(new_items, f.name) = try gpa.alloc(f.type, actual_new_capacity);
-                @field(new_items, f.name).len = previous_len;
-            }
-            inline for (info.fields) |f| {
-                @memcpy(@field(new_items, f.name)[0..previous_len], @field(self.items, f.name)[0..previous_len]);
-            }
-            inline for (info.fields) |f| {
-                gpa.free(@field(self.items, f.name)[0..previous_len]);
-            }
-            self.items = new_items;
-            self.capacity = actual_new_capacity;
-        }
-
-        /// Called when memory growth is necessary. Returns a capacity larger than minimum that grows super-linearly.
-        fn growCapacity(current: usize, minimum: usize) usize {
-            var new = current;
-            while (true) {
-                new +|= new / 2 + init_capacity;
-                if (new >= minimum) return new;
-            }
-        }
-
-        const init_capacity = init: {
-            var max = 1;
-            for (info.fields) |field| max = @as(comptime_int, @max(max, @sizeOf(field.type)));
-            break :init @as(comptime_int, @max(1, std.atomic.cache_line / max));
-        };
-
-        pub fn append(self: *Self, gpa: std.mem.Allocator, elem: T) !void {
-            try self.ensureUnusedCapacity(gpa, 1);
-            self.appendAssumeCapacity(elem);
-        }
-
-        pub fn appendAssumeCapacity(self: *Self, elem: T) void {
-            const plen = self.len();
-            std.debug.assert(plen < self.capacity);
-            inline for (info.fields) |f| {
-                @field(self.items, f.name).len += 1;
-                @field(self.items, f.name)[plen] = @field(elem, f.name);
-            }
-        }
-    };
-}
