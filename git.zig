@@ -1111,8 +1111,7 @@ pub const Repository = struct {
                     i += name_end + 1;
 
                     const oid_raw = obj.content[i..][0..20].*;
-                    const oid_hex = (try arena.alloc(u8, 40))[0..40];
-                    oid_hex.* = extras.to_hex(oid_raw);
+                    const oid_hex = extras.to_hex(oid_raw);
                     i += 20;
 
                     var mode_buf: [6]u8 = @splat('0');
@@ -1122,18 +1121,20 @@ pub const Repository = struct {
                     try children.append(r.gpa, .{
                         .mode = mode_real,
                         .name = name,
-                        .id = switch (mode_real.type) {
-                            .file => .{ .blob = .{ .id = oid_hex } },
-                            .directory => .{ .tree = .{ .id = oid_hex } },
-                            .submodule => .{ .commit = .{ .id = oid_hex } },
-                            .symlink => .{ .blob = .{ .id = oid_hex } },
-                            .none => unreachable,
-                        },
+                        .id_bytes = oid_hex,
+                        .id = undefined,
                     });
                 }
 
                 const children_slice = try children.toOwnedSlice(r.gpa);
                 errdefer r.gpa.free(children_slice);
+                for (children_slice) |*item| item.id = switch (item.mode.type) {
+                    .file => .{ .blob = .{ .id = &item.id_bytes } },
+                    .directory => .{ .tree = .{ .id = &item.id_bytes } },
+                    .submodule => .{ .commit = .{ .id = &item.id_bytes } },
+                    .symlink => .{ .blob = .{ .id = &item.id_bytes } },
+                    .none => unreachable,
+                };
                 const tree: Tree = .{ .children = children_slice };
                 try r.trees.put(r.gpa, id.id, tree);
                 return .{ id, tree };
@@ -1419,6 +1420,7 @@ pub const Tree = struct {
 
     pub const Object = struct {
         mode: Mode,
+        id_bytes: [40]u8,
         id: AnyId,
         name: [:0]const u8,
 
