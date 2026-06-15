@@ -1393,7 +1393,33 @@ pub const Tree = struct {
     children: []const Object,
 
     pub fn get(self: Tree, name: string, hint: Object.Type) ?Object {
-        const i = std.sort.binarySearch(Object, self.children, .{ name, hint }, Object.search) orelse return null;
+        _ = hint;
+        // modified std.sort.binarySearch
+        const i = blk: {
+            var low: usize = 0;
+            var high: usize = self.children.len;
+            while (low < high) {
+                const mid = low + (high - low) / 2;
+                switch (Object.search(name, self.children[mid])) {
+                    .eq => break :blk mid,
+                    .gt => low = mid + 1,
+                    .lt => high = mid,
+                }
+            }
+            for (self.children[low..], 0..) |item, i| {
+                if (std.mem.startsWith(u8, item.name, name)) {
+                    if (item.name[name.len..].len == 0) {
+                        break :blk low + i;
+                    }
+                    if (std.math.order(item.name[name.len..][0], '/') == .gt) {
+                        return null;
+                    }
+                    continue;
+                }
+                break;
+            }
+            return null;
+        };
         return self.children[i];
     }
 
@@ -1424,10 +1450,10 @@ pub const Tree = struct {
         id: AnyId,
         name: [:0]const u8,
 
-        fn search(a: struct { []const u8, Type }, b: Object) std.math.Order {
-            if (a[0].ptr != b.name.ptr) {
-                const n = @min(a[0].len, b.name.len);
-                for (a[0][0..n], b.name[0..n]) |lhs_elem, rhs_elem| {
+        fn search(a: []const u8, b: Object) std.math.Order {
+            if (a.ptr != b.name.ptr) {
+                const n = @min(a.len, b.name.len);
+                for (a[0..n], b.name[0..n]) |lhs_elem, rhs_elem| {
                     switch (std.math.order(lhs_elem, rhs_elem)) {
                         .eq => continue,
                         .lt => return .lt,
@@ -1435,9 +1461,9 @@ pub const Tree = struct {
                     }
                 }
             }
-            return switch (std.math.order(a[0].len, b.name.len)) {
-                .lt => if (a[1] == .directory) std.math.order('/', b.name[a[0].len]) else .lt,
-                .gt => if (b.mode.type == .directory) std.math.order(a[0][b.name.len], '/') else .gt,
+            return switch (std.math.order(a.len, b.name.len)) {
+                .lt => .lt,
+                .gt => if (b.mode.type == .directory) std.math.order(a[b.name.len], '/') else .gt,
                 .eq => .eq,
             };
         }
