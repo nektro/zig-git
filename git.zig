@@ -1273,7 +1273,7 @@ pub const Repository = struct {
             while (findFirstUnset(set, i)) |j| : (i += 1) {
                 i = j;
                 const k = result.keys()[i];
-                const new = tree.get(k, base_tree.children[i].mode.type);
+                const new = tree.get(k);
                 if (new == null) {
                     found += 1;
                     result.putAssumeCapacity(k, commit_id_prev);
@@ -1432,12 +1432,12 @@ pub const Repository = struct {
                             continue;
                         },
                         .lt => {
-                            const after_item = after_tree.get(before.name, before.mode.type) orelse {
+                            const after_item = after_tree.get(before.name) orelse {
                                 try D.either(e, w, p, before);
                                 before_i += 1;
                                 continue;
                             };
-                            const before_item = before_tree.get(after.name, after.mode.type) orelse {
+                            const before_item = before_tree.get(after.name) orelse {
                                 try A.either(e, w, p, after);
                                 after_i += 1;
                                 continue;
@@ -1460,12 +1460,12 @@ pub const Repository = struct {
                             comptime unreachable;
                         },
                         .gt => {
-                            const before_item = before_tree.get(after.name, after.mode.type) orelse {
+                            const before_item = before_tree.get(after.name) orelse {
                                 try A.either(e, w, p, after);
                                 after_i += 1;
                                 continue;
                             };
-                            const after_item = after_tree.get(before.name, before.mode.type) orelse {
+                            const after_item = after_tree.get(before.name) orelse {
                                 try D.either(e, w, p, before);
                                 before_i += 1;
                                 continue;
@@ -1580,7 +1580,7 @@ fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, di
     var iter = std.mem.splitScalar(u8, dir_path, '/');
     while (iter.next()) |segment| {
         const tree = try r.getTreeA(arena, id.id);
-        const o = tree.get(segment, .directory) orelse return null;
+        const o = tree.get(segment) orelse return null;
         if (o.id != .tree) return null;
         id = o.id.tree;
     }
@@ -1590,8 +1590,7 @@ fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, di
 pub const Tree = struct {
     children: []const Object,
 
-    pub fn get(self: Tree, name: string, hint: Object.Type) ?Object {
-        _ = hint;
+    pub fn get(self: Tree, name: string) ?Object {
         // modified std.sort.binarySearch
         const i = blk: {
             var low: usize = 0;
