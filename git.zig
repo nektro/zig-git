@@ -1270,12 +1270,14 @@ pub const Repository = struct {
             defer commit_id_prev = commit_id;
             commit = commit_idx.reify(r);
             const new_tree_id = try traverseTo(r, arena, commit.tree, dir_path) orelse {
-                for (result.keys(), 0..) |k, i| {
-                    if (set.isSet(i)) continue;
+                var i: usize = 0;
+                while (findFirstUnset(set, i)) |j| : (i += 1) {
+                    i = j;
+                    const k = result.keys()[i];
                     found += 1;
                     result.putAssumeCapacity(k, commit_id_prev);
                     set.set(i);
-                    // std.log.debug("found [{d}/{d}] objects after searching {d} commits", .{ found, total, searched });
+                    // std.log.debug("found [{d}/{d}] objects after searching {d} commits, found {s}", .{ found, total, searched, k });
                     continue;
                 }
                 break;
@@ -1283,21 +1285,23 @@ pub const Repository = struct {
             if (new_tree_id.eql(tree_id)) continue;
             tree_id = new_tree_id;
             const tree = try r.getTreeA(arena, tree_id.id);
-            for (result.keys(), 0..) |k, i| {
-                if (set.isSet(i)) continue;
+            var i: usize = 0;
+            while (findFirstUnset(set, i)) |j| : (i += 1) {
+                i = j;
+                const k = result.keys()[i];
                 const new = tree.get(k, base_tree.children[i].mode.type);
                 if (new == null) {
                     found += 1;
                     result.putAssumeCapacity(k, commit_id_prev);
                     set.set(i);
-                    // std.log.debug("found [{d}/{d}] objects after searching {d} commits", .{ found, total, searched });
+                    // std.log.debug("found [{d}/{d}] objects after searching {d} commits, at {d} found {s}", .{ found, total, searched, i, k });
                     continue;
                 }
                 if (!std.mem.eql(u8, new.?.id.erase(), base_tree.children[i].id.erase())) {
                     found += 1;
                     result.putAssumeCapacity(k, commit_id_prev);
                     set.set(i);
-                    // std.log.debug("found [{d}/{d}] objects after searching {d} commits", .{ found, total, searched });
+                    // std.log.debug("found [{d}/{d}] objects after searching {d} commits, at {d} found {s}", .{ found, total, searched, i, k });
                     continue;
                 }
             }
@@ -1646,3 +1650,19 @@ pub const Ref = struct {
     oid: Id,
     label: string,
 };
+
+pub fn findFirstUnset(set: std.bit_set.DynamicBitSetUnmanaged, after: usize) ?usize {
+    const MaskInt = std.bit_set.DynamicBitSetUnmanaged.MaskInt;
+    if (after >= set.bit_length) return null;
+    if (!set.isSet(after)) return after;
+    var maski = after / @bitSizeOf(MaskInt);
+    while (set.masks[maski] == std.math.maxInt(MaskInt)) maski += 1;
+    var mask = set.masks[maski];
+    mask |= (@as(usize, 1) << @intCast((after -| (maski * @bitSizeOf(MaskInt))) % @bitSizeOf(MaskInt))) - 1;
+    if (mask == std.math.maxInt(MaskInt)) maski += 1;
+    while (set.masks[maski] == std.math.maxInt(MaskInt)) maski += 1;
+    if (mask == std.math.maxInt(MaskInt)) mask = set.masks[maski];
+    const candidate = maski * @bitSizeOf(MaskInt) + @ctz(~mask);
+    if (candidate >= set.bit_length) return null;
+    return candidate;
+}
