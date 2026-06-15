@@ -1305,18 +1305,7 @@ pub const Repository = struct {
         return try arena.dupe(CommitId, result.values());
     }
 
-    pub fn writeTreeDiffOnlyRaw(r: *Repository, writable: anytype, commitid: CommitId, parentid: ?CommitId) !void {
-        const S = struct {
-            fn item(w: anytype, b_mode: Tree.Object.Mode, a_mode: Tree.Object.Mode, b_id: Id, a_id: Id, action: TreeDiff.Action, p: ?*const PathListNode, name: []const u8) !void {
-                if (p == null) {
-                    try w.writevAll(&.{ ":", &b_mode.intbytes(), " ", &a_mode.intbytes(), " ", b_id, " ", a_id, " ", @tagName(action), "\t", name, "\n" });
-                    return;
-                }
-                try w.writevAll(&.{ ":", &b_mode.intbytes(), " ", &a_mode.intbytes(), " ", b_id, " ", a_id, " ", @tagName(action), "\t" });
-                try p.?.nprint(w);
-                try w.writevAll(&.{ "/", name, "\n" });
-            }
-        };
+    pub fn diffFileIterator(r: *Repository, writable: anytype, commitid_from: ?CommitId, commitid_to: CommitId, S: type) !void {
         const A = struct {
             fn item(w: anytype, mode: Tree.Object.Mode, id: Id, p: ?*const PathListNode, name: []const u8) !void {
                 try S.item(w, .none, mode, &@splat('0'), id, .A, p, name);
@@ -1503,17 +1492,32 @@ pub const Repository = struct {
                 }
             }
         };
-        if (parentid == null) {
-            const commitidx = try r.getCommitA(r.gpa, commitid.id);
+        if (commitid_from == null) {
+            const commitidx = try r.getCommitA(r.gpa, commitid_to.id);
             const commit = commitidx.reify(r);
             try A.dir(r, writable, commit.tree.id, null, 0);
             return;
         }
-        const before_commitidx = try r.getCommitA(r.gpa, parentid.?.id);
+        const before_commitidx = try r.getCommitA(r.gpa, commitid_from.?.id);
         const before_commit = before_commitidx.reify(r);
-        const after_commitidx = try r.getCommitA(r.gpa, commitid.id);
+        const after_commitidx = try r.getCommitA(r.gpa, commitid_to.id);
         const after_commit = after_commitidx.reify(r);
         try M.dir(r, writable, before_commit.tree.id, after_commit.tree.id, null);
+    }
+
+    pub fn writeTreeDiffOnlyRaw(r: *Repository, writable: anytype, commitid: CommitId, parentid: ?CommitId) !void {
+        const S = struct {
+            fn item(w: anytype, b_mode: Tree.Object.Mode, a_mode: Tree.Object.Mode, b_id: Id, a_id: Id, action: TreeDiff.Action, p: ?*const PathListNode, name: []const u8) !void {
+                if (p == null) {
+                    try w.writevAll(&.{ ":", &b_mode.intbytes(), " ", &a_mode.intbytes(), " ", b_id, " ", a_id, " ", @tagName(action), "\t", name, "\n" });
+                    return;
+                }
+                try w.writevAll(&.{ ":", &b_mode.intbytes(), " ", &a_mode.intbytes(), " ", b_id, " ", a_id, " ", @tagName(action), "\t" });
+                try p.?.nprint(w);
+                try w.writevAll(&.{ "/", name, "\n" });
+            }
+        };
+        return diffFileIterator(r, writable, parentid, commitid, S);
     }
 };
 
