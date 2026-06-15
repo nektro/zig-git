@@ -262,23 +262,6 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, p
 }
 
 // TODO make this inspect .git manually
-pub fn getTreeDiffOnlyRaw(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
-    const t = tracer.trace(@src(), "", .{});
-    defer t.end();
-
-    if (parentid == null) {
-        // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
-        // result of `printf | git hash-object -t tree --stdin`
-        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--raw", "-r", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id });
-        std.debug.assert(result.term == .exited and result.term.exited == 0);
-        return result.stdout;
-    }
-    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--raw", "-r", parentid.?.id, commitid.id });
-    std.debug.assert(result.term == .exited and result.term.exited == 0);
-    return result.stdout;
-}
-
-// TODO make this inspect .git manually
 pub fn getTreeDiffOnlyStat(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
@@ -1321,6 +1304,217 @@ pub const Repository = struct {
 
         return try arena.dupe(CommitId, result.values());
     }
+
+    pub fn writeTreeDiffOnlyRaw(r: *Repository, writable: anytype, commitid: CommitId, parentid: ?CommitId) !void {
+        const S = struct {
+            fn item(w: anytype, b_mode: Tree.Object.Mode, a_mode: Tree.Object.Mode, b_id: Id, a_id: Id, action: TreeDiff.Action, p: ?*const PathListNode, name: []const u8) !void {
+                if (p == null) {
+                    try w.writevAll(&.{ ":", &b_mode.intbytes(), " ", &a_mode.intbytes(), " ", b_id, " ", a_id, " ", @tagName(action), "\t", name, "\n" });
+                    return;
+                }
+                try w.writevAll(&.{ ":", &b_mode.intbytes(), " ", &a_mode.intbytes(), " ", b_id, " ", a_id, " ", @tagName(action), "\t" });
+                try p.?.nprint(w);
+                try w.writevAll(&.{ "/", name, "\n" });
+            }
+        };
+        const A = struct {
+            fn item(w: anytype, mode: Tree.Object.Mode, id: Id, p: ?*const PathListNode, name: []const u8) !void {
+                try S.item(w, .none, mode, &@splat('0'), id, .A, p, name);
+            }
+            fn dir(e: *Repository, w: anytype, t: Id, p: ?*const PathListNode, o: usize) !void {
+                const tree = try e.getTreeA(e.gpa, t);
+                for (tree.children[o..]) |obj| {
+                    if (obj.mode.type == .directory) {
+                        try dir(e, w, obj.id.tree.id, &.{ .prev = p, .data = obj.name }, 0);
+                        continue;
+                    }
+                    try item(w, obj.mode, obj.id.erase(), p, obj.name);
+                }
+            }
+            pub fn either(e: *Repository, w: anytype, p: ?*const PathListNode, obj: Tree.Object) !void {
+                if (obj.mode.type == .directory) {
+                    return dir(e, w, obj.id.tree.id, &.{ .prev = p, .data = obj.name }, 0);
+                }
+                return item(w, obj.mode, obj.id.erase(), p, obj.name);
+            }
+        };
+        const D = struct {
+            fn item(w: anytype, mode: Tree.Object.Mode, id: Id, p: ?*const PathListNode, name: []const u8) !void {
+                try S.item(w, mode, .none, id, &@splat('0'), .D, p, name);
+            }
+            fn dir(e: *Repository, w: anytype, t: Id, p: ?*const PathListNode, o: usize) !void {
+                const tree = try e.getTreeA(e.gpa, t);
+                for (tree.children[o..]) |obj| {
+                    if (obj.mode.type == .directory) {
+                        try dir(e, w, obj.id.tree.id, &.{ .prev = p, .data = obj.name }, 0);
+                        continue;
+                    }
+                    try item(w, obj.mode, obj.id.erase(), p, obj.name);
+                }
+            }
+            pub fn either(e: *Repository, w: anytype, p: ?*const PathListNode, obj: Tree.Object) !void {
+                if (obj.mode.type == .directory) {
+                    return dir(e, w, obj.id.tree.id, &.{ .prev = p, .data = obj.name }, 0);
+                }
+                return item(w, obj.mode, obj.id.erase(), p, obj.name);
+            }
+        };
+        const M = struct {
+            fn dir(e: *Repository, w: anytype, b_t: Id, a_t: Id, p: ?*const PathListNode) !void {
+                var before_i: usize = 0;
+                const before_tree = try e.getTreeA(e.gpa, b_t);
+                const before_children = before_tree.children;
+
+                var after_i: usize = 0;
+                const after_tree = try e.getTreeA(e.gpa, a_t);
+                const after_children = after_tree.children;
+
+                while (true) {
+                    if (after_i == after_tree.children.len) {
+                        try D.dir(e, w, b_t, p, before_i);
+                        break;
+                    }
+                    if (before_i == before_tree.children.len) {
+                        try A.dir(e, w, a_t, p, after_i);
+                        break;
+                    }
+
+                    const before = before_children[before_i];
+                    const after = after_children[after_i];
+
+                    switch (before.order(after)) {
+                        .eq => {
+                            if (std.mem.eql(u8, before.id.erase(), after.id.erase())) {
+                                if (!std.mem.eql(u8, &before.mode.intbytes(), &after.mode.intbytes())) {
+                                    try S.item(
+                                        w,
+                                        before.mode,
+                                        after.mode,
+                                        before.id.erase(),
+                                        after.id.erase(),
+                                        .M,
+                                        p,
+                                        after.name,
+                                    );
+                                }
+                                before_i += 1;
+                                after_i += 1;
+                                continue;
+                            }
+                            if (before.mode.type != after.mode.type) {
+                                try S.item(
+                                    w,
+                                    before.mode,
+                                    after.mode,
+                                    before.id.erase(),
+                                    after.id.erase(),
+                                    .T,
+                                    p,
+                                    after.name,
+                                );
+                                before_i += 1;
+                                after_i += 1;
+                                continue;
+                            }
+                            if (before.mode.type == .directory) {
+                                try dir(
+                                    e,
+                                    w,
+                                    before.id.tree.id,
+                                    after.id.tree.id,
+                                    &.{ .prev = p, .data = after.name },
+                                );
+                                before_i += 1;
+                                after_i += 1;
+                                continue;
+                            }
+                            try S.item(
+                                w,
+                                before.mode,
+                                after.mode,
+                                before.id.erase(),
+                                after.id.erase(),
+                                .M,
+                                p,
+                                after.name,
+                            );
+                            before_i += 1;
+                            after_i += 1;
+                            continue;
+                        },
+                        .lt => {
+                            const after_item = after_tree.get(before.name, before.mode.type) orelse {
+                                try D.either(e, w, p, before);
+                                before_i += 1;
+                                continue;
+                            };
+                            const before_item = before_tree.get(after.name, after.mode.type) orelse {
+                                try A.either(e, w, p, after);
+                                after_i += 1;
+                                continue;
+                            };
+                            if (std.mem.eql(u8, &after_item.id_bytes, &before.id_bytes)) {
+                                before_i += 1;
+                                continue;
+                            }
+                            if (std.mem.eql(u8, &before_item.id_bytes, &after.id_bytes)) {
+                                after_i += 1;
+                                continue;
+                            }
+                            {
+                                try D.either(e, w, p, before);
+                                before_i += 1;
+                                try A.either(e, w, p, after);
+                                after_i += 1;
+                                continue;
+                            }
+                            comptime unreachable;
+                        },
+                        .gt => {
+                            const before_item = before_tree.get(after.name, after.mode.type) orelse {
+                                try A.either(e, w, p, after);
+                                after_i += 1;
+                                continue;
+                            };
+                            const after_item = after_tree.get(before.name, before.mode.type) orelse {
+                                try D.either(e, w, p, before);
+                                before_i += 1;
+                                continue;
+                            };
+                            if (std.mem.eql(u8, &before_item.id_bytes, &after.id_bytes)) {
+                                after_i += 1;
+                                continue;
+                            }
+                            if (std.mem.eql(u8, &after_item.id_bytes, &before.id_bytes)) {
+                                before_i += 1;
+                                continue;
+                            }
+                            {
+                                try A.either(e, w, p, after);
+                                before_i += 1;
+                                try D.either(e, w, p, before);
+                                after_i += 1;
+                                continue;
+                            }
+                            comptime unreachable;
+                        },
+                    }
+                    comptime unreachable;
+                }
+            }
+        };
+        if (parentid == null) {
+            const commitidx = try r.getCommitA(r.gpa, commitid.id);
+            const commit = commitidx.reify(r);
+            try A.dir(r, writable, commit.tree.id, null, 0);
+            return;
+        }
+        const before_commitidx = try r.getCommitA(r.gpa, parentid.?.id);
+        const before_commit = before_commitidx.reify(r);
+        const after_commitidx = try r.getCommitA(r.gpa, commitid.id);
+        const after_commit = after_commitidx.reify(r);
+        try M.dir(r, writable, before_commit.tree.id, after_commit.tree.id, null);
+    }
 };
 
 const z = @cImport({
@@ -1468,11 +1662,33 @@ pub const Tree = struct {
             };
         }
 
+        pub fn order(lhs: Object, rhs: Object) std.math.Order {
+            if (lhs.name.ptr != rhs.name.ptr) {
+                const n = @min(lhs.name.len, rhs.name.len);
+                for (lhs.name[0..n], rhs.name[0..n]) |lhs_elem, rhs_elem| {
+                    switch (std.math.order(lhs_elem, rhs_elem)) {
+                        .eq => continue,
+                        .lt => return .lt,
+                        .gt => return .gt,
+                    }
+                }
+            }
+            const l_is_dir = lhs.mode.type == .directory;
+            const r_is_dir = rhs.mode.type == .directory;
+            return switch (std.math.order(lhs.name.len, rhs.name.len)) {
+                .lt => if (l_is_dir) std.math.order('/', rhs.name[lhs.name.len]) else .lt,
+                .gt => if (r_is_dir) std.math.order(lhs.name[rhs.name.len], '/') else .gt,
+                .eq => if (l_is_dir and r_is_dir) .eq else if (l_is_dir) .gt else if (r_is_dir) .lt else .eq,
+            };
+        }
+
         pub const Mode = struct {
             type: Type,
             perm_user: Perm,
             perm_group: Perm,
             perm_other: Perm,
+
+            pub const none = std.mem.zeroes(Mode);
 
             pub fn format(self: Mode, comptime fmt: string, options: std.fmt.FormatOptions, writer: anytype) !void {
                 _ = fmt;
@@ -1694,3 +1910,17 @@ pub fn findFirstUnset(set: std.bit_set.DynamicBitSetUnmanaged, after: usize) ?us
     if (candidate >= set.bit_length) return null;
     return candidate;
 }
+
+const PathListNode = struct {
+    prev: ?*const @This(),
+    data: []const u8,
+
+    pub fn nprint(node: *const PathListNode, writable: anytype) !void {
+        if (node.prev == null) {
+            try writable.writeAll(node.data);
+            return;
+        }
+        try nprint(node.prev.?, writable);
+        try writable.writevAll(&.{ "/", node.data });
+    }
+};
