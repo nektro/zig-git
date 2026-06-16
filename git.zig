@@ -269,11 +269,11 @@ pub fn getTreeDiffOnlyStat(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: Com
     if (parentid == null) {
         // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
         // result of `printf | git hash-object -t tree --stdin`
-        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--stat", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id });
+        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--stat=2048", "--stat-graph-width=32", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id });
         std.debug.assert(result.term == .exited and result.term.exited == 0);
         return result.stdout;
     }
-    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--stat", parentid.?.id, commitid.id });
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--stat=2048", "--stat-graph-width=32", parentid.?.id, commitid.id });
     std.debug.assert(result.term == .exited and result.term.exited == 0);
     return result.stdout;
 }
