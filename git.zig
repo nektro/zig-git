@@ -793,9 +793,16 @@ pub const Repository = struct {
                 );
             }
         }
-        const t4 = tracer.trace(@src(), " find pack_index/pack_offset", .{});
-        errdefer t4.end();
-        const pack_index, const pack_offset = blk: for (r.idx_content.keys(), r.idx_content.values()) |idx_path, idx_content| {
+        const pack_index, const pack_offset = try r.getObjectPackIndex(oid) orelse return null;
+        // parse .pack
+        return try r.getPackedObject(arena, oid, pack_index, pack_offset);
+    }
+
+    fn getObjectPackIndex(r: *Repository, oid: Id) !?[2]usize {
+        const t = tracer.trace(@src(), " {s}", .{oid});
+        defer t.end();
+
+        for (r.idx_content.keys(), r.idx_content.values()) |idx_path, idx_content| {
             if (std.mem.startsWith(u8, idx_content, "\xfftOc")) {
                 var idx_fbs: nio.FixedBufferStream([]const u8) = .init(idx_content);
                 _ = idx_fbs.takeSlice(4);
@@ -843,15 +850,11 @@ pub const Repository = struct {
                     try r.pack_content.put(r.gpa, idx_path, pack_content);
                     break :clk r.pack_content.count() - 1;
                 };
-                break :blk .{ pack_index, pack_offset };
-            } else {
-                return error.Version1Idx;
+                return .{ pack_index, pack_offset };
             }
-        } else return null;
-        t4.end();
-
-        // parse .pack
-        return try r.getPackedObject(arena, oid, pack_index, pack_offset);
+            return error.UnexpectedIdxVersion;
+        }
+        return null;
     }
 
     fn getPackedObject(r: *Repository, arena: std.mem.Allocator, maybe_oid: ?Id, pack_index: usize, pack_offset: usize) !GitObject {
