@@ -998,10 +998,8 @@ pub const Repository = struct {
         const _type = base_obj.type;
         const content = try list2.toOwnedSlice(r.gpa);
         const obj: GitObject = .{ .type = _type, .content = content };
-        if (maybe_oid) |oid|
-            try r.unpacked_loose_objects.put(r.gpa, oid, obj)
-        else
-            try r.unpacked_objects.put(r.gpa, key, obj);
+        _ = maybe_oid;
+        try r.unpacked_objects.put(r.gpa, key, obj);
         return obj;
     }
 
