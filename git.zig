@@ -279,23 +279,6 @@ pub fn getTreeDiffOnlyStat(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: Com
 }
 
 // TODO make this inspect .git manually
-pub fn getTreeDiffOnlySummary(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
-    const t = tracer.trace(@src(), "", .{});
-    defer t.end();
-
-    if (parentid == null) {
-        // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
-        // result of `printf | git hash-object -t tree --stdin`
-        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--summary", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id });
-        std.debug.assert(result.term == .exited and result.term.exited == 0);
-        return result.stdout;
-    }
-    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .ignore, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "--summary", parentid.?.id, commitid.id });
-    std.debug.assert(result.term == .exited and result.term.exited == 0);
-    return result.stdout;
-}
-
-// TODO make this inspect .git manually
 pub fn getTreeDiffOnlyDiff(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, parentid: ?CommitId) !string {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
@@ -1515,6 +1498,48 @@ pub const Repository = struct {
                 try w.writevAll(&.{ ":", &b_mode.intbytes(), " ", &a_mode.intbytes(), " ", b_id, " ", a_id, " ", @tagName(action), "\t" });
                 try p.?.nprint(w);
                 try w.writevAll(&.{ "/", name, "\n" });
+            }
+        };
+        return diffFileIterator(r, writable, parentid, commitid, S);
+    }
+
+    pub fn writeTreeDiffOnlySummary(r: *Repository, writable: anytype, commitid: CommitId, parentid: ?CommitId) !void {
+        const S = struct {
+            fn item(w: anytype, b_mode: Tree.Object.Mode, a_mode: Tree.Object.Mode, b_id: Id, a_id: Id, action: TreeDiff.Action, p: ?*const PathListNode, name: []const u8) !void {
+                _ = b_id;
+                _ = a_id;
+                switch (action) {
+                    .A => {
+                        if (p == null) {
+                            try w.writevAll(&.{ " create mode ", &a_mode.intbytes(), " ", name, "\n" });
+                            return;
+                        }
+                        try w.writevAll(&.{ " create mode ", &a_mode.intbytes(), " " });
+                        try p.?.nprint(w);
+                        try w.writevAll(&.{ "/", name, "\n" });
+                    },
+                    .D => {
+                        if (p == null) {
+                            try w.writevAll(&.{ " delete mode ", &b_mode.intbytes(), " ", name, "\n" });
+                            return;
+                        }
+                        try w.writevAll(&.{ " delete mode ", &b_mode.intbytes(), " " });
+                        try p.?.nprint(w);
+                        try w.writevAll(&.{ "/", name, "\n" });
+                    },
+                    .M => {
+                        if (!std.mem.eql(u8, &b_mode.intbytes(), &a_mode.intbytes())) {
+                            if (p == null) {
+                                try w.writevAll(&.{ " mode change ", &b_mode.intbytes(), " => ", &a_mode.intbytes(), " ", name, "\n" });
+                                return;
+                            }
+                            try w.writevAll(&.{ " mode change ", &b_mode.intbytes(), " => ", &a_mode.intbytes(), " " });
+                            try p.?.nprint(w);
+                            try w.writevAll(&.{ "/", name, "\n" });
+                        }
+                    },
+                    else => {},
+                }
             }
         };
         return diffFileIterator(r, writable, parentid, commitid, S);
