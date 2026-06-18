@@ -1291,8 +1291,8 @@ pub const Repository = struct {
 
     pub fn diffFileIterator(r: *Repository, writable: anytype, commitid_from: ?CommitId, commitid_to: CommitId, S: type) !void {
         const A = struct {
-            fn item(w: anytype, mode: Tree.Object.Mode, id: Id, p: ?*const PathListNode, name: []const u8) !void {
-                try S.item(w, .none, mode, &@splat('0'), id, .A, p, name);
+            fn item(e: *Repository, w: anytype, mode: Tree.Object.Mode, id: Id, p: ?*const PathListNode, name: []const u8) !void {
+                try S.item(e, w, .none, mode, &@splat('0'), id, .A, p, name);
             }
             fn dir(e: *Repository, w: anytype, t: Id, p: ?*const PathListNode, o: usize) !void {
                 const tree = try e.getTreeA(e.gpa, t);
@@ -1301,19 +1301,19 @@ pub const Repository = struct {
                         try dir(e, w, obj.id.tree.id, &.{ .prev = p, .data = obj.name }, 0);
                         continue;
                     }
-                    try item(w, obj.mode, obj.id.erase(), p, obj.name);
+                    try item(e, w, obj.mode, obj.id.erase(), p, obj.name);
                 }
             }
             pub fn either(e: *Repository, w: anytype, p: ?*const PathListNode, obj: Tree.Object) !void {
                 if (obj.mode.type == .directory) {
                     return dir(e, w, obj.id.tree.id, &.{ .prev = p, .data = obj.name }, 0);
                 }
-                return item(w, obj.mode, obj.id.erase(), p, obj.name);
+                return item(e, w, obj.mode, obj.id.erase(), p, obj.name);
             }
         };
         const D = struct {
-            fn item(w: anytype, mode: Tree.Object.Mode, id: Id, p: ?*const PathListNode, name: []const u8) !void {
-                try S.item(w, mode, .none, id, &@splat('0'), .D, p, name);
+            fn item(e: *Repository, w: anytype, mode: Tree.Object.Mode, id: Id, p: ?*const PathListNode, name: []const u8) !void {
+                try S.item(e, w, mode, .none, id, &@splat('0'), .D, p, name);
             }
             fn dir(e: *Repository, w: anytype, t: Id, p: ?*const PathListNode, o: usize) !void {
                 const tree = try e.getTreeA(e.gpa, t);
@@ -1322,14 +1322,14 @@ pub const Repository = struct {
                         try dir(e, w, obj.id.tree.id, &.{ .prev = p, .data = obj.name }, 0);
                         continue;
                     }
-                    try item(w, obj.mode, obj.id.erase(), p, obj.name);
+                    try item(e, w, obj.mode, obj.id.erase(), p, obj.name);
                 }
             }
             pub fn either(e: *Repository, w: anytype, p: ?*const PathListNode, obj: Tree.Object) !void {
                 if (obj.mode.type == .directory) {
                     return dir(e, w, obj.id.tree.id, &.{ .prev = p, .data = obj.name }, 0);
                 }
-                return item(w, obj.mode, obj.id.erase(), p, obj.name);
+                return item(e, w, obj.mode, obj.id.erase(), p, obj.name);
             }
         };
         const M = struct {
@@ -1360,6 +1360,7 @@ pub const Repository = struct {
                             if (std.mem.eql(u8, before.id.erase(), after.id.erase())) {
                                 if (!std.mem.eql(u8, &before.mode.intbytes(), &after.mode.intbytes())) {
                                     try S.item(
+                                        e,
                                         w,
                                         before.mode,
                                         after.mode,
@@ -1376,6 +1377,7 @@ pub const Repository = struct {
                             }
                             if (before.mode.type != after.mode.type) {
                                 try S.item(
+                                    e,
                                     w,
                                     before.mode,
                                     after.mode,
@@ -1402,6 +1404,7 @@ pub const Repository = struct {
                                 continue;
                             }
                             try S.item(
+                                e,
                                 w,
                                 before.mode,
                                 after.mode,
@@ -1491,7 +1494,8 @@ pub const Repository = struct {
 
     pub fn writeTreeDiffOnlyRaw(r: *Repository, writable: anytype, commitid: CommitId, parentid: ?CommitId) !void {
         const S = struct {
-            fn item(w: anytype, b_mode: Tree.Object.Mode, a_mode: Tree.Object.Mode, b_id: Id, a_id: Id, action: TreeDiff.Action, p: ?*const PathListNode, name: []const u8) !void {
+            fn item(e: *Repository, w: anytype, b_mode: Tree.Object.Mode, a_mode: Tree.Object.Mode, b_id: Id, a_id: Id, action: TreeDiff.Action, p: ?*const PathListNode, name: []const u8) !void {
+                _ = e;
                 if (p == null) {
                     try w.writevAll(&.{ ":", &b_mode.intbytes(), " ", &a_mode.intbytes(), " ", b_id, " ", a_id, " ", @tagName(action), "\t", name, "\n" });
                     return;
@@ -1506,7 +1510,8 @@ pub const Repository = struct {
 
     pub fn writeTreeDiffOnlySummary(r: *Repository, writable: anytype, commitid: CommitId, parentid: ?CommitId) !void {
         const S = struct {
-            fn item(w: anytype, b_mode: Tree.Object.Mode, a_mode: Tree.Object.Mode, b_id: Id, a_id: Id, action: TreeDiff.Action, p: ?*const PathListNode, name: []const u8) !void {
+            fn item(e: *Repository, w: anytype, b_mode: Tree.Object.Mode, a_mode: Tree.Object.Mode, b_id: Id, a_id: Id, action: TreeDiff.Action, p: ?*const PathListNode, name: []const u8) !void {
+                _ = e;
                 _ = b_id;
                 _ = a_id;
                 switch (action) {
