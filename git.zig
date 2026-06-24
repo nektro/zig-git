@@ -164,7 +164,14 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
     defer t.end();
 
     var iter = std.mem.splitScalar(u8, commitfile, '\n');
-    var result: Commit = undefined;
+    var result: Commit = .{
+        .raw = commitfile,
+        .tree = undefined,
+        .parents = undefined,
+        .author = undefined,
+        .committer = undefined,
+        .message = undefined,
+    };
     var parents = std.array_list.Managed(CommitId).init(alloc);
     errdefer parents.deinit();
     while (true) {
@@ -570,8 +577,13 @@ pub fn parseTag(tagfile: string) !Tag {
     defer t.end();
 
     var iter = std.mem.splitScalar(u8, tagfile, '\n');
-    var result: Tag = undefined;
-    result.tagger = null;
+    var result: Tag = .{
+        .raw = tagfile,
+        .object = undefined,
+        .type = undefined,
+        .tagger = null,
+        .message = undefined,
+    };
     const object = extras.trimPrefixEnsure(iter.next().?, "object ").?;
     std.debug.assert(object.len == 40);
     result.object = object[0..40];
@@ -1110,7 +1122,7 @@ pub const Repository = struct {
                     .symlink => .{ .blob = .{ .id = &item.id_bytes } },
                     .none => unreachable,
                 };
-                const tree: Tree = .{ .children = children_slice };
+                const tree: Tree = .{ .raw = obj.content, .children = children_slice };
                 if (cache_behavior == .cache) try r.trees.put(r.gpa, id.id, tree);
                 return .{ id, tree };
             }
@@ -1630,6 +1642,7 @@ fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, di
 }
 
 pub const Tree = struct {
+    raw: []const u8,
     children: []const Object,
 
     pub fn get(self: Tree, name: string) ?Object {
@@ -1915,6 +1928,7 @@ pub const Tree = struct {
 };
 
 pub const Commit = struct {
+    raw: []const u8,
     tree: TreeId,
     parents: []const CommitId,
     author: UserAndAt,
@@ -1929,6 +1943,7 @@ pub const UserAndAt = struct {
 };
 
 pub const Tag = struct {
+    raw: []const u8,
     object: Id,
     type: RefType,
     tagger: ?UserAndAt,
