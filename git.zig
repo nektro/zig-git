@@ -61,14 +61,6 @@ pub const AnyId = union(RefType) {
     }
 };
 
-pub const CommitIdx = enum(u32) {
-    _,
-
-    pub fn reify(self: CommitIdx, r: *const Repository) *const Commit {
-        return &r.commits.values()[@intFromEnum(self)];
-    }
-};
-
 pub fn version(alloc: std.mem.Allocator) !string {
     const result = try root.child_process.run(alloc, .cwd(), .ignore, .pipe, .pipe, 1024, &.{ "git", "--version" });
     defer alloc.free(result.stdout);
@@ -1058,25 +1050,24 @@ pub const Repository = struct {
         return (try r.getBlob(.{ .id = id }, cache_behavior)).?;
     }
 
-    pub fn getCommit(r: *Repository, id: CommitId) !?struct { CommitId, CommitIdx } {
+    pub fn getCommit(r: *Repository, id: CommitId) !?struct { CommitId, Commit } {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
-        if (r.commits.getIndex(id.id)) |idx| {
-            return .{ id, @enumFromInt(idx) };
+        if (r.commits.getPtr(id.id)) |val| {
+            return .{ id, val.* };
         }
         if (try r.getObject(id.id, .cache)) |obj| {
             if (obj.type == .commit) {
                 const commit = try parseCommit(r.gpa, obj.content);
                 try r.commits.put(r.gpa, id.id, commit);
-                const idx = r.commits.values().len - 1;
-                return .{ id, @enumFromInt(idx) };
+                return .{ id, commit };
             }
         }
         return null;
     }
 
-    pub fn getCommitA(r: *Repository, id: Id) !CommitIdx {
+    pub fn getCommitA(r: *Repository, id: Id) !Commit {
         return (try r.getCommit(.{ .id = id })).?.@"1";
     }
 
@@ -1240,8 +1231,7 @@ pub const Repository = struct {
 
         // const start = time.milliTimestamp();
 
-        const base_idx = try r.getCommitA(base_oid.id);
-        const base = base_idx.reify(r);
+        const base = try r.getCommitA(base_oid.id);
         const base_tree_id = (try traverseTo(r, base.tree, dir_path)).?;
         const base_tree = try r.getTreeA(base_tree_id.id, .cache);
         const total = base_tree.children.len;
@@ -1257,15 +1247,13 @@ pub const Repository = struct {
         var searched: usize = 1;
         var commit_id_prev = base_oid;
         var commit_id = base_oid;
-        var commit_idx = base_idx;
         var commit = base;
         var tree_id = base_tree_id;
         while (true) {
             if (commit.parents.len == 0) break;
-            commit_id, commit_idx = (try r.getCommit(commit.parents[0])).?;
+            commit_id, commit = (try r.getCommit(commit.parents[0])).?;
             searched += 1;
             defer commit_id_prev = commit_id;
-            commit = commit_idx.reify(r);
             const new_tree_id = try traverseTo(r, commit.tree, dir_path) orelse {
                 var i: usize = 0;
                 while (findFirstUnset(set, i)) |j| : (i += 1) {
@@ -1509,15 +1497,12 @@ pub const Repository = struct {
             }
         };
         if (commitid_from == null) {
-            const commitidx = try r.getCommitA(commitid_to.id);
-            const commit = commitidx.reify(r);
+            const commit = try r.getCommitA(commitid_to.id);
             try A.dir(r, writable, commit.tree.id, null, 0);
             return;
         }
-        const before_commitidx = try r.getCommitA(commitid_from.?.id);
-        const before_commit = before_commitidx.reify(r);
-        const after_commitidx = try r.getCommitA(commitid_to.id);
-        const after_commit = after_commitidx.reify(r);
+        const before_commit = try r.getCommitA(commitid_from.?.id);
+        const after_commit = try r.getCommitA(commitid_to.id);
         try M.dir(r, writable, before_commit.tree.id, after_commit.tree.id, null);
     }
 
