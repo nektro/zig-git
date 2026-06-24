@@ -84,7 +84,9 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: nfs.Dir) !?CommitId {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
-    const h = std.mem.trimEnd(u8, try dir.readFileAlloc(alloc, "HEAD", 1024), "\n");
+    const headfile = try dir.readFileAlloc(alloc, "HEAD", 1024);
+    defer alloc.free(headfile);
+    const h = std.mem.trimEnd(u8, headfile, "\n");
 
     if (std.mem.startsWith(u8, h, "ref:")) {
         blk: {
@@ -95,13 +97,15 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: nfs.Dir) !?CommitId {
                 error.ENOENT => break :blk,
                 else => |e| return e,
             };
-            return ensureObjId(CommitId, std.mem.trimEnd(u8, reffile, "\n"));
+            defer alloc.free(reffile);
+            return ensureObjId(CommitId, try alloc.dupe(u8, std.mem.trimEnd(u8, reffile, "\n")));
         }
         blk: {
             const pckedrfs = dir.readFileAlloc(alloc, "packed-refs", 1024 * 1024 * 1024) catch |err| switch (err) {
                 error.ENOENT => break :blk,
                 else => |e| return e,
             };
+            defer alloc.free(pckedrfs);
             var iter = std.mem.splitScalar(u8, pckedrfs, '\n');
             while (iter.next()) |line| {
                 if (std.mem.startsWith(u8, line, "#")) continue;
@@ -111,13 +115,13 @@ pub fn getHEAD(alloc: std.mem.Allocator, dir: nfs.Dir) !?CommitId {
                 const objid = jter.next().?;
                 const ref = jter.next().?;
                 std.debug.assert(jter.next() == null);
-                if (std.mem.eql(u8, h[5..], ref)) return ensureObjId(CommitId, objid);
+                if (std.mem.eql(u8, h[5..], ref)) return ensureObjId(CommitId, try alloc.dupe(u8, objid));
             }
         }
         return null;
     }
 
-    return ensureObjId(CommitId, h);
+    return ensureObjId(CommitId, try alloc.dupe(u8, h));
 }
 
 // 40 is length of sha1 hash
