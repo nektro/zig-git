@@ -740,6 +740,7 @@ pub const Repository = struct {
         r.unpacked_loose_objects.deinit(r.gpa);
         for (r.unpacked_objects.values()) |v| r.gpa.free(v.content);
         r.unpacked_objects.deinit(r.gpa);
+        for (r.idx_content.keys()) |k| r.gpa.free(k);
         for (r.idx_content.values()) |v| nfs.munmap(v);
         r.idx_content.deinit(r.gpa);
         for (r.pack_content.values()) |v| nfs.munmap(v);
@@ -751,7 +752,7 @@ pub const Repository = struct {
         r.tags.deinit(r.gpa);
     }
 
-    pub fn getObject(r: *Repository, arena: std.mem.Allocator, oid: Id, cache_behavior: CacheBehavior) anyerror!?GitObject {
+    pub fn getObject(r: *Repository, oid: Id, cache_behavior: CacheBehavior) anyerror!?GitObject {
         const t = tracer.trace(@src(), " {s}", .{oid});
         defer t.end();
 
@@ -807,14 +808,14 @@ pub const Repository = struct {
                 errdefer nfs.munmap(idx_content);
                 try r.idx_content.put(
                     r.gpa,
-                    try arena.dupe(u8, entry.name),
+                    try r.gpa.dupe(u8, entry.name),
                     idx_content,
                 );
             }
         }
         const pack_index, const pack_offset = try r.getObjectPackIndex(oid) orelse return null;
         // parse .pack
-        return try r.getPackedObject(arena, oid, pack_index, pack_offset, cache_behavior);
+        return try r.getPackedObject(oid, pack_index, pack_offset, cache_behavior);
     }
 
     fn getObjectPackIndex(r: *Repository, oid: Id) !?[2]usize {
@@ -876,7 +877,7 @@ pub const Repository = struct {
         return null;
     }
 
-    fn getPackedObject(r: *Repository, arena: std.mem.Allocator, maybe_oid: ?Id, pack_index: usize, pack_offset: usize, cache_behavior: CacheBehavior) !GitObject {
+    fn getPackedObject(r: *Repository, maybe_oid: ?Id, pack_index: usize, pack_offset: usize, cache_behavior: CacheBehavior) !GitObject {
         const t = tracer.trace(@src(), " {?s} {d} {d} {s}", .{ maybe_oid, pack_index, pack_offset, r.pack_content.keys()[pack_index] });
         defer t.end();
 
@@ -932,13 +933,13 @@ pub const Repository = struct {
                             offset += 1;
                         }
                         const base_pack_offset = pack_offset - offset;
-                        const base_obj = try r.getPackedObject(arena, null, pack_index, base_pack_offset, cache_behavior);
+                        const base_obj = try r.getPackedObject(null, pack_index, base_pack_offset, cache_behavior);
                         defer if (cache_behavior == .no_cache) r.gpa.free(base_obj.content);
                         return r.getDeltadObject(maybe_oid, key, &packedobj_fbs, size, base_obj, cache_behavior);
                     },
                     .ref_delta => {
                         const base_oid = extras.to_hex(packedobj_fbs.takeSlice(20)[0..20].*);
-                        const base_obj = (try r.getObject(arena, &base_oid, cache_behavior)).?;
+                        const base_obj = (try r.getObject(&base_oid, cache_behavior)).?;
                         defer if (cache_behavior == .no_cache) r.gpa.free(base_obj.content);
                         return r.getDeltadObject(maybe_oid, key, &packedobj_fbs, size, base_obj, cache_behavior);
                     },
@@ -1024,16 +1025,16 @@ pub const Repository = struct {
         return obj;
     }
 
-    pub fn getObjectA(r: *Repository, arena: std.mem.Allocator, oid: Id, cache_behavior: CacheBehavior) !GitObject {
-        return (try r.getObject(arena, oid, cache_behavior)).?;
+    pub fn getObjectA(r: *Repository, oid: Id, cache_behavior: CacheBehavior) !GitObject {
+        return (try r.getObject(oid, cache_behavior)).?;
     }
 
-    pub fn getObjectC(r: *Repository, arena: std.mem.Allocator, oid: Id, cache_behavior: CacheBehavior) ![]const u8 {
-        return (try r.getObjectA(arena, oid, cache_behavior)).content;
+    pub fn getObjectC(r: *Repository, oid: Id, cache_behavior: CacheBehavior) ![]const u8 {
+        return (try r.getObjectA(oid, cache_behavior)).content;
     }
 
-    pub fn getObjectS(r: *Repository, arena: std.mem.Allocator, oid: Id, cache_behavior: CacheBehavior) !usize {
-        const content = try r.getObjectC(arena, oid, cache_behavior);
+    pub fn getObjectS(r: *Repository, oid: Id, cache_behavior: CacheBehavior) !usize {
+        const content = try r.getObjectC(oid, cache_behavior);
         defer if (cache_behavior == .no_cache) r.gpa.free(content);
         return content.len;
     }
@@ -1043,8 +1044,8 @@ pub const Repository = struct {
         content: []const u8,
     };
 
-    pub fn getBlob(r: *Repository, arena: std.mem.Allocator, id: BlobId, cache_behavior: CacheBehavior) !?[]const u8 {
-        if (try r.getObject(arena, id.id, cache_behavior)) |obj| {
+    pub fn getBlob(r: *Repository, id: BlobId, cache_behavior: CacheBehavior) !?[]const u8 {
+        if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .blob) {
                 return obj.content;
             }
@@ -1053,18 +1054,18 @@ pub const Repository = struct {
         return null;
     }
 
-    pub fn getBlobA(r: *Repository, arena: std.mem.Allocator, id: Id, cache_behavior: CacheBehavior) ![]const u8 {
-        return (try r.getBlob(arena, .{ .id = id }, cache_behavior)).?;
+    pub fn getBlobA(r: *Repository, id: Id, cache_behavior: CacheBehavior) ![]const u8 {
+        return (try r.getBlob(.{ .id = id }, cache_behavior)).?;
     }
 
-    pub fn getCommit(r: *Repository, arena: std.mem.Allocator, id: CommitId) !?struct { CommitId, CommitIdx } {
+    pub fn getCommit(r: *Repository, id: CommitId) !?struct { CommitId, CommitIdx } {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
         if (r.commits.getIndex(id.id)) |idx| {
             return .{ id, @enumFromInt(idx) };
         }
-        if (try r.getObject(arena, id.id, .cache)) |obj| {
+        if (try r.getObject(id.id, .cache)) |obj| {
             if (obj.type == .commit) {
                 const commit = try parseCommit(r.gpa, obj.content);
                 try r.commits.put(r.gpa, id.id, commit);
@@ -1075,18 +1076,18 @@ pub const Repository = struct {
         return null;
     }
 
-    pub fn getCommitA(r: *Repository, arena: std.mem.Allocator, id: Id) !CommitIdx {
-        return (try r.getCommit(arena, .{ .id = id })).?.@"1";
+    pub fn getCommitA(r: *Repository, id: Id) !CommitIdx {
+        return (try r.getCommit(.{ .id = id })).?.@"1";
     }
 
-    pub fn getTree(r: *Repository, arena: std.mem.Allocator, id: TreeId, cache_behavior: CacheBehavior) !?struct { TreeId, Tree } {
+    pub fn getTree(r: *Repository, id: TreeId, cache_behavior: CacheBehavior) !?struct { TreeId, Tree } {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
         if (r.trees.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
-        if (try r.getObject(arena, id.id, cache_behavior)) |obj| {
+        if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .tree) {
                 errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
                 var children: std.ArrayList(Tree.Object) = .empty;
@@ -1136,18 +1137,18 @@ pub const Repository = struct {
         return null;
     }
 
-    pub fn getTreeA(r: *Repository, arena: std.mem.Allocator, id: Id, cache_behavior: CacheBehavior) !Tree {
-        return (try r.getTree(arena, .{ .id = id }, cache_behavior)).?.@"1";
+    pub fn getTreeA(r: *Repository, id: Id, cache_behavior: CacheBehavior) !Tree {
+        return (try r.getTree(.{ .id = id }, cache_behavior)).?.@"1";
     }
 
-    pub fn getTag(r: *Repository, arena: std.mem.Allocator, id: TagId, cache_behavior: CacheBehavior) !?struct { TagId, Tag } {
+    pub fn getTag(r: *Repository, id: TagId, cache_behavior: CacheBehavior) !?struct { TagId, Tag } {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
         if (r.tags.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
-        if (try r.getObject(arena, id.id, cache_behavior)) |obj| {
+        if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .tag) {
                 errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
                 const tag = try parseTag(obj.content);
@@ -1159,8 +1160,8 @@ pub const Repository = struct {
         return null;
     }
 
-    pub fn getTagA(r: *Repository, arena: std.mem.Allocator, id: Id, cache_behavior: CacheBehavior) !Tag {
-        return (try r.getTag(arena, .{ .id = id }, cache_behavior)).?.@"1";
+    pub fn getTagA(r: *Repository, id: Id, cache_behavior: CacheBehavior) !Tag {
+        return (try r.getTag(.{ .id = id }, cache_behavior)).?.@"1";
     }
 
     pub fn getHeads(r: *Repository, arena: std.mem.Allocator) ![]Ref {
@@ -1239,10 +1240,10 @@ pub const Repository = struct {
 
         // const start = time.milliTimestamp();
 
-        const base_idx = try r.getCommitA(arena, base_oid.id);
+        const base_idx = try r.getCommitA(base_oid.id);
         const base = base_idx.reify(r);
-        const base_tree_id = (try traverseTo(r, arena, base.tree, dir_path)).?;
-        const base_tree = try r.getTreeA(arena, base_tree_id.id, .cache);
+        const base_tree_id = (try traverseTo(r, base.tree, dir_path)).?;
+        const base_tree = try r.getTreeA(base_tree_id.id, .cache);
         const total = base_tree.children.len;
 
         var found: usize = 0;
@@ -1261,11 +1262,11 @@ pub const Repository = struct {
         var tree_id = base_tree_id;
         while (true) {
             if (commit.parents.len == 0) break;
-            commit_id, commit_idx = (try r.getCommit(arena, commit.parents[0])).?;
+            commit_id, commit_idx = (try r.getCommit(commit.parents[0])).?;
             searched += 1;
             defer commit_id_prev = commit_id;
             commit = commit_idx.reify(r);
-            const new_tree_id = try traverseTo(r, arena, commit.tree, dir_path) orelse {
+            const new_tree_id = try traverseTo(r, commit.tree, dir_path) orelse {
                 var i: usize = 0;
                 while (findFirstUnset(set, i)) |j| : (i += 1) {
                     i = j;
@@ -1280,7 +1281,7 @@ pub const Repository = struct {
             };
             if (new_tree_id.eql(tree_id)) continue;
             tree_id = new_tree_id;
-            const tree = try r.getTreeA(arena, tree_id.id, .cache);
+            const tree = try r.getTreeA(tree_id.id, .cache);
             var i: usize = 0;
             while (findFirstUnset(set, i)) |j| : (i += 1) {
                 i = j;
@@ -1323,7 +1324,7 @@ pub const Repository = struct {
                 try S.item(e, w, .none, mode, &@splat('0'), id, .A, p, name);
             }
             fn dir(e: *Repository, w: anytype, t: Id, p: ?*const PathListNode, o: usize) !void {
-                const tree = try e.getTreeA(e.gpa, t, .cache);
+                const tree = try e.getTreeA(t, .cache);
                 for (tree.children[o..]) |obj| {
                     if (obj.mode.type == .directory) {
                         try dir(e, w, obj.id.tree.id, &.{ .prev = p, .data = obj.name }, 0);
@@ -1344,7 +1345,7 @@ pub const Repository = struct {
                 try S.item(e, w, mode, .none, id, &@splat('0'), .D, p, name);
             }
             fn dir(e: *Repository, w: anytype, t: Id, p: ?*const PathListNode, o: usize) !void {
-                const tree = try e.getTreeA(e.gpa, t, .cache);
+                const tree = try e.getTreeA(t, .cache);
                 for (tree.children[o..]) |obj| {
                     if (obj.mode.type == .directory) {
                         try dir(e, w, obj.id.tree.id, &.{ .prev = p, .data = obj.name }, 0);
@@ -1363,11 +1364,11 @@ pub const Repository = struct {
         const M = struct {
             fn dir(e: *Repository, w: anytype, b_t: Id, a_t: Id, p: ?*const PathListNode) !void {
                 var before_i: usize = 0;
-                const before_tree = try e.getTreeA(e.gpa, b_t, .cache);
+                const before_tree = try e.getTreeA(b_t, .cache);
                 const before_children = before_tree.children;
 
                 var after_i: usize = 0;
-                const after_tree = try e.getTreeA(e.gpa, a_t, .cache);
+                const after_tree = try e.getTreeA(a_t, .cache);
                 const after_children = after_tree.children;
 
                 while (true) {
@@ -1508,14 +1509,14 @@ pub const Repository = struct {
             }
         };
         if (commitid_from == null) {
-            const commitidx = try r.getCommitA(r.gpa, commitid_to.id);
+            const commitidx = try r.getCommitA(commitid_to.id);
             const commit = commitidx.reify(r);
             try A.dir(r, writable, commit.tree.id, null, 0);
             return;
         }
-        const before_commitidx = try r.getCommitA(r.gpa, commitid_from.?.id);
+        const before_commitidx = try r.getCommitA(commitid_from.?.id);
         const before_commit = before_commitidx.reify(r);
-        const after_commitidx = try r.getCommitA(r.gpa, commitid_to.id);
+        const after_commitidx = try r.getCommitA(commitid_to.id);
         const after_commit = after_commitidx.reify(r);
         try M.dir(r, writable, before_commit.tree.id, after_commit.tree.id, null);
     }
@@ -1633,12 +1634,12 @@ const ZlibCode = enum(c_int) {
     Z_VERSION_ERROR = -6,
 };
 
-fn traverseTo(r: *Repository, arena: std.mem.Allocator, treestart_id: TreeId, dir_path: []const u8) !?TreeId {
+fn traverseTo(r: *Repository, treestart_id: TreeId, dir_path: []const u8) !?TreeId {
     var id = treestart_id;
     if (dir_path.len == 0) return id;
     var iter = std.mem.splitScalar(u8, dir_path, '/');
     while (iter.next()) |segment| {
-        const tree = try r.getTreeA(arena, id.id, .cache);
+        const tree = try r.getTreeA(id.id, .cache);
         const o = tree.get(segment) orelse return null;
         if (o.id != .tree) return null;
         id = o.id.tree;
@@ -1846,7 +1847,7 @@ pub const Tree = struct {
         };
     };
 
-    pub fn walk(self: Tree, r: *Repository, arena: std.mem.Allocator) !Walker {
+    pub fn walk(self: Tree, r: *Repository) !Walker {
         var stack: std.ArrayListUnmanaged(Walker.StackItem) = .empty;
 
         try stack.append(r.gpa, .{
@@ -1856,7 +1857,6 @@ pub const Tree = struct {
         });
         return .{
             .repo = r,
-            .arena = arena,
             .stack = stack,
             .name_buffer = .empty,
         };
@@ -1864,7 +1864,6 @@ pub const Tree = struct {
 
     pub const Walker = struct {
         repo: *Repository,
-        arena: std.mem.Allocator,
         stack: std.ArrayListUnmanaged(StackItem),
         name_buffer: std.ArrayListUnmanaged(u8),
 
@@ -1881,7 +1880,6 @@ pub const Tree = struct {
 
         pub fn next(self: *Walker) !?Walker.Entry {
             const gpa = self.repo.gpa;
-            const arena = self.arena;
             while (self.stack.items.len != 0) {
                 var top = &self.stack.items[self.stack.items.len - 1];
                 var containing = top;
@@ -1898,7 +1896,7 @@ pub const Tree = struct {
                     self.name_buffer.appendSliceAssumeCapacity(base.name);
                     self.name_buffer.appendAssumeCapacity(0);
                     if (base.id == .tree) {
-                        const new_tree = try self.repo.getTreeA(arena, base.id.tree.id, .cache);
+                        const new_tree = try self.repo.getTreeA(base.id.tree.id, .cache);
                         {
                             // errdefer new_dir.close();
                             try self.stack.append(gpa, .{
