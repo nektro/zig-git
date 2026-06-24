@@ -1050,25 +1050,27 @@ pub const Repository = struct {
         return (try r.getBlob(.{ .id = id }, cache_behavior)).?;
     }
 
-    pub fn getCommit(r: *Repository, id: CommitId) !?struct { CommitId, Commit } {
+    pub fn getCommit(r: *Repository, id: CommitId, cache_behavior: CacheBehavior) !?struct { CommitId, Commit } {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
         if (r.commits.getPtr(id.id)) |val| {
             return .{ id, val.* };
         }
-        if (try r.getObject(id.id, .cache)) |obj| {
+        if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .commit) {
+                errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
                 const commit = try parseCommit(r.gpa, obj.content);
                 try r.commits.put(r.gpa, id.id, commit);
                 return .{ id, commit };
             }
+            if (cache_behavior == .no_cache) r.gpa.free(obj.content);
         }
         return null;
     }
 
-    pub fn getCommitA(r: *Repository, id: Id) !Commit {
-        return (try r.getCommit(.{ .id = id })).?.@"1";
+    pub fn getCommitA(r: *Repository, id: Id, cache_behavior: CacheBehavior) !Commit {
+        return (try r.getCommit(.{ .id = id }, cache_behavior)).?.@"1";
     }
 
     pub fn getTree(r: *Repository, id: TreeId, cache_behavior: CacheBehavior) !?struct { TreeId, Tree } {
@@ -1231,7 +1233,7 @@ pub const Repository = struct {
 
         // const start = time.milliTimestamp();
 
-        const base = try r.getCommitA(base_oid.id);
+        const base = try r.getCommitA(base_oid.id, .cache);
         const base_tree_id = (try traverseTo(r, base.tree, dir_path)).?;
         const base_tree = try r.getTreeA(base_tree_id.id, .cache);
         const total = base_tree.children.len;
@@ -1251,7 +1253,7 @@ pub const Repository = struct {
         var tree_id = base_tree_id;
         while (true) {
             if (commit.parents.len == 0) break;
-            commit_id, commit = (try r.getCommit(commit.parents[0])).?;
+            commit_id, commit = (try r.getCommit(commit.parents[0], .cache)).?;
             searched += 1;
             defer commit_id_prev = commit_id;
             const new_tree_id = try traverseTo(r, commit.tree, dir_path) orelse {
@@ -1497,12 +1499,12 @@ pub const Repository = struct {
             }
         };
         if (commitid_from == null) {
-            const commit = try r.getCommitA(commitid_to.id);
+            const commit = try r.getCommitA(commitid_to.id, .cache);
             try A.dir(r, writable, commit.tree.id, null, 0);
             return;
         }
-        const before_commit = try r.getCommitA(commitid_from.?.id);
-        const after_commit = try r.getCommitA(commitid_to.id);
+        const before_commit = try r.getCommitA(commitid_from.?.id, .cache);
+        const after_commit = try r.getCommitA(commitid_to.id, .cache);
         try M.dir(r, writable, before_commit.tree.id, after_commit.tree.id, null);
     }
 
