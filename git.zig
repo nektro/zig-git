@@ -744,6 +744,7 @@ pub const Repository = struct {
         r.idx_content.deinit(r.gpa);
         for (r.pack_content.values()) |v| nfs.munmap(v);
         r.pack_content.deinit(r.gpa);
+        for (r.commits.values()) |v| r.gpa.free(v.parents);
         r.commits.deinit(r.gpa);
         for (r.trees.values()) |*v| r.gpa.free(v.children);
         r.trees.deinit(r.gpa);
@@ -1065,7 +1066,7 @@ pub const Repository = struct {
         }
         if (try r.getObject(arena, id.id, .cache)) |obj| {
             if (obj.type == .commit) {
-                const commit = try parseCommit(arena, obj.content);
+                const commit = try parseCommit(r.gpa, obj.content);
                 try r.commits.put(r.gpa, id.id, commit);
                 const idx = r.commits.values().len - 1;
                 return .{ id, @enumFromInt(idx) };
