@@ -71,12 +71,14 @@ pub fn version(alloc: std.mem.Allocator) !string {
 
 /// Returns the result of running `git rev-parse HEAD`
 /// dir must already be pointing at the .git folder
-// TODO this doesnt handle when there are 0 commits
 pub fn getHEAD(alloc: std.mem.Allocator, dir: nfs.Dir) !?CommitId {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
-    const headfile = try dir.readFileAlloc(alloc, "HEAD", 1024);
+    const headfile = dir.readFileAlloc(alloc, "HEAD", 1024) catch |err| switch (err) {
+        error.ENOENT => return null,
+        else => |e| return e,
+    };
     defer alloc.free(headfile);
     const h = std.mem.trimEnd(u8, headfile, "\n");
 
