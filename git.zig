@@ -1814,6 +1814,20 @@ pub const Tree = struct {
                 b[5] = @as(u8, @as(u3, @bitCast(self.perm_other))) + '0';
                 return b;
             }
+
+            pub fn octal(self: Mode) u9 {
+                const O = packed struct {
+                    other: Perm,
+                    group: Perm,
+                    user: Perm,
+                };
+                const o: O = .{
+                    .other = self.perm_other,
+                    .group = self.perm_group,
+                    .user = self.perm_user,
+                };
+                return @bitCast(o);
+            }
         };
 
         pub const Type = enum(u8) {
