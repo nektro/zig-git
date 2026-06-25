@@ -157,7 +157,7 @@ pub fn revListAll(alloc: std.mem.Allocator, dir: nfs.Dir, from: CommitId, sub_pa
     return std.mem.trimEnd(u8, result.stdout, "\n");
 }
 
-pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
+pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string, mailmap: *const std.hash_map.StringHashMapUnmanaged([]const u8)) !Commit {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
@@ -184,6 +184,8 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string) !Commit {
         if (std.mem.eql(u8, k, "parent")) try parents.append(.{ .id = line[space + 1 ..][0..40] });
     }
     result.parents = try parents.toOwnedSlice();
+    result.author.email = mailmap.get(result.author.email) orelse result.author.email;
+    result.committer.email = mailmap.get(result.committer.email) orelse result.committer.email;
     result.message = iter.rest();
     return result;
 }
@@ -1093,7 +1095,7 @@ pub const Repository = struct {
         if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .commit) {
                 errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
-                const commit = try parseCommit(r.gpa, obj.content);
+                const commit = try parseCommit(r.gpa, obj.content, &r.mailmap);
                 try r.commits.put(r.gpa, id.id, commit);
                 return .{ id, commit };
             }
