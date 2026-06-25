@@ -712,6 +712,7 @@ pub const Repository = struct {
     commits: std.StringArrayHashMapUnmanaged(Commit),
     trees: std.StringArrayHashMapUnmanaged(Tree),
     tags: std.StringArrayHashMapUnmanaged(Tag),
+    mailmap: std.hash_map.StringHashMapUnmanaged([]const u8),
 
     pub const CacheBehavior = enum { no_cache, cache };
 
@@ -726,6 +727,7 @@ pub const Repository = struct {
             .commits = .empty,
             .trees = .empty,
             .tags = .empty,
+            .mailmap = .empty,
         };
     }
 
@@ -744,6 +746,35 @@ pub const Repository = struct {
         for (r.trees.values()) |*v| r.gpa.free(v.children);
         r.trees.deinit(r.gpa);
         r.tags.deinit(r.gpa);
+        r.mailmap.deinit(r.gpa);
+    }
+
+    pub fn initMailmap(r: *Repository) !void {
+        const headid = try getHEAD(r.gpa, r.gitdir) orelse return;
+        const head = try r.getCommitA(headid.id, .cache);
+        const tree = try r.getTreeA(head.tree.id, .cache);
+        const blob = tree.get(".mailmap") orelse return;
+        if (blob.id != .blob) return;
+        const mailmap_content = try r.getBlobA(blob.id.blob.id, .cache);
+
+        var mailmap: std.hash_map.StringHashMapUnmanaged([]const u8) = .empty;
+        if (mailmap_content.len > 0) {
+            var iter = std.mem.splitScalar(u8, mailmap_content, '\n');
+            while (iter.next()) |line| {
+                if (std.mem.startsWith(u8, line, "#")) continue;
+                var jter = std.mem.splitScalar(u8, line, '<');
+                var first: ?[]const u8 = null;
+                while (jter.next()) |fntry| {
+                    const email = fntry[0 .. std.mem.indexOfScalar(u8, fntry, '>') orelse continue];
+                    if (first == null) {
+                        first = email;
+                        continue;
+                    }
+                    try mailmap.put(r.gpa, email, first.?);
+                }
+            }
+        }
+        r.mailmap = mailmap;
     }
 
     pub fn getObject(r: *Repository, oid: Id, cache_behavior: CacheBehavior) anyerror!?GitObject {
