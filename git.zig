@@ -157,7 +157,7 @@ pub fn revListAll(alloc: std.mem.Allocator, dir: nfs.Dir, from: CommitId, sub_pa
     return std.mem.trimEnd(u8, result.stdout, "\n");
 }
 
-pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string, mailmap: *const std.hash_map.StringHashMapUnmanaged([]const u8)) !Commit {
+pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string, mailmap: *const std.hash_map.StringHashMapUnmanaged([]const u8), mailmap_names: *const std.hash_map.StringHashMapUnmanaged([]const u8)) !Commit {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
 
@@ -185,7 +185,9 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string, mailmap: *const
     }
     result.parents = try parents.toOwnedSlice();
     result.author.email = mailmap.get(result.author.email) orelse result.author.email;
+    result.author.name = mailmap_names.get(result.author.email) orelse result.author.name;
     result.committer.email = mailmap.get(result.committer.email) orelse result.committer.email;
+    result.committer.name = mailmap_names.get(result.committer.email) orelse result.committer.name;
     result.message = iter.rest();
     return result;
 }
@@ -715,6 +717,7 @@ pub const Repository = struct {
     trees: std.StringArrayHashMapUnmanaged(Tree),
     tags: std.StringArrayHashMapUnmanaged(Tag),
     mailmap: std.hash_map.StringHashMapUnmanaged([]const u8),
+    mailmap_names: std.hash_map.StringHashMapUnmanaged([]const u8),
 
     pub const CacheBehavior = enum { no_cache, cache };
 
@@ -730,6 +733,7 @@ pub const Repository = struct {
             .trees = .empty,
             .tags = .empty,
             .mailmap = .empty,
+            .mailmap_names = .empty,
         };
     }
 
@@ -749,6 +753,7 @@ pub const Repository = struct {
         r.trees.deinit(r.gpa);
         r.tags.deinit(r.gpa);
         r.mailmap.deinit(r.gpa);
+        r.mailmap_names.deinit(r.gpa);
     }
 
     pub fn initMailmap(r: *Repository) !void {
@@ -760,16 +765,19 @@ pub const Repository = struct {
         const mailmap_content = try r.getBlobA(blob.id.blob.id, .cache);
 
         var mailmap: std.hash_map.StringHashMapUnmanaged([]const u8) = .empty;
+        var mailmap_names: std.hash_map.StringHashMapUnmanaged([]const u8) = .empty;
         if (mailmap_content.len > 0) {
             var iter = std.mem.splitScalar(u8, mailmap_content, '\n');
             while (iter.next()) |line| {
                 if (std.mem.startsWith(u8, line, "#")) continue;
                 var jter = std.mem.splitScalar(u8, line, '<');
+                const name = std.mem.trim(u8, jter.next().?, " ");
                 var first: ?[]const u8 = null;
                 while (jter.next()) |fntry| {
                     const email = fntry[0 .. std.mem.indexOfScalar(u8, fntry, '>') orelse continue];
                     if (first == null) {
                         first = email;
+                        try mailmap_names.put(r.gpa, email, name);
                         continue;
                     }
                     try mailmap.put(r.gpa, email, first.?);
@@ -777,6 +785,7 @@ pub const Repository = struct {
             }
         }
         r.mailmap = mailmap;
+        r.mailmap_names = mailmap_names;
     }
 
     pub fn getObject(r: *Repository, oid: Id, cache_behavior: CacheBehavior) anyerror!?GitObject {
@@ -1095,7 +1104,7 @@ pub const Repository = struct {
         if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .commit) {
                 errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
-                const commit = try parseCommit(r.gpa, obj.content, &r.mailmap);
+                const commit = try parseCommit(r.gpa, obj.content, &r.mailmap, &r.mailmap_names);
                 try r.commits.put(r.gpa, id.id, commit);
                 return .{ id, commit };
             }
