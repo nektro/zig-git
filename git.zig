@@ -1196,7 +1196,9 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), "", .{});
         defer t.end();
 
-        return r.getRefs(arena, "heads");
+        const refs = try r.getRefs(arena, "heads");
+        for (refs) |*e| e.commit = e.oid;
+        return refs;
     }
 
     pub fn getTags(r: *Repository, arena: std.mem.Allocator) ![]Ref {
@@ -1210,16 +1212,16 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), "", .{});
         defer t.end();
 
-        var map: std.StringArrayHashMapUnmanaged(Id) = .empty;
+        var map: std.StringArrayHashMapUnmanaged(struct { Id, ?Id }) = .empty;
         try r.addPackedRefs(&map, arena, kind);
         try r.addDirRefs(&map, arena, kind);
         var list: std.ArrayListUnmanaged(Ref) = .empty;
         try list.ensureUnusedCapacity(arena, map.count());
-        for (map.keys(), map.values()) |label, oid| list.appendAssumeCapacity(.{ .oid = oid, .label = label });
+        for (map.keys(), map.values()) |label, vals| list.appendAssumeCapacity(.{ .label = label, .oid = vals[0], .commit = vals[1] });
         return list.items;
     }
 
-    fn addPackedRefs(r: *Repository, map: *std.StringArrayHashMapUnmanaged(Id), arena: std.mem.Allocator, comptime kind: [:0]const u8) !void {
+    fn addPackedRefs(r: *Repository, map: *std.StringArrayHashMapUnmanaged(struct { Id, ?Id }), arena: std.mem.Allocator, comptime kind: [:0]const u8) !void {
         const t = tracer.trace(@src(), "", .{});
         defer t.end();
 
@@ -1233,18 +1235,21 @@ pub const Repository = struct {
         var iter = std.mem.splitScalar(u8, content, '\n');
         while (iter.next()) |line| {
             if (line.len == 0) break;
-            if (line[0] == '^') continue;
             if (line[0] == '#') continue;
+            if (line[0] == '^') {
+                map.values()[map.count() - 1][1] = ensureObjId(CommitId, try arena.dupe(u8, line[1..])).id;
+                continue;
+            }
             std.debug.assert(extras.matchesAll(u8, line[0..40], std.ascii.isHex));
             std.debug.assert(line[40] == ' ');
             const rest = extras.trimPrefixEnsure(line[41..], "refs/" ++ kind ++ "/") orelse continue;
             const oid = try arena.dupe(u8, line[0..40]);
             const label = try arena.dupeZ(u8, rest);
-            try map.put(arena, label, oid[0..40]);
+            try map.put(arena, label, .{ oid[0..40], null });
         }
     }
 
-    fn addDirRefs(r: *Repository, map: *std.StringArrayHashMapUnmanaged(Id), arena: std.mem.Allocator, comptime kind: [:0]const u8) !void {
+    fn addDirRefs(r: *Repository, map: *std.StringArrayHashMapUnmanaged(struct { Id, ?Id }), arena: std.mem.Allocator, comptime kind: [:0]const u8) !void {
         const t = tracer.trace(@src(), "", .{});
         defer t.end();
 
@@ -1258,7 +1263,7 @@ pub const Repository = struct {
             defer file.close();
             const label = try arena.dupeZ(u8, entry.path);
             const oid = try file.readAlloc(arena, 40);
-            try map.put(arena, label, oid[0..40]);
+            try map.put(arena, label, .{ oid[0..40], null });
         }
     }
 
@@ -1990,8 +1995,9 @@ pub const Tag = struct {
 };
 
 pub const Ref = struct {
-    oid: Id,
     label: string,
+    oid: Id,
+    commit: ?Id,
 };
 
 pub fn findFirstUnset(set: std.bit_set.DynamicBitSetUnmanaged, after: usize) ?usize {
