@@ -406,11 +406,15 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
             .index = @splat(.{ .id = "0000000000000000000000000000000000000000" }),
             .before_path = overview.items[i].sub_path,
             .after_path = overview.items[i].sub_path,
+            .before_mode = overview.items[i].before.mode,
+            .after_mode = overview.items[i].after.mode,
             .subs = 0,
             .adds = 0,
             .content = "",
         });
         const diff = &diffs.items[diffs.items.len - 1];
+        if (overview.items[i].action == .T) diff.before_mode = .none;
+        if (overview.items[i].action == .T) diff.after_mode = .none;
 
         while (true) {
             if (lineiter.index.? >= input.len) {
@@ -429,19 +433,23 @@ pub fn parseTreeDiff(alloc: std.mem.Allocator, input: string) !TreeDiff {
                     lineiter.index.? += lin.len + 1;
                     break;
                 }
-                if (std.mem.startsWith(u8, lin, "new file mode")) {
+                if (extras.trimPrefixEnsure(lin, "new file mode ")) |sl| {
+                    diff.after_mode = parseTreeMode(sl) catch unreachable;
                     lineiter.index.? += lin.len + 1;
                     continue;
                 }
-                if (std.mem.startsWith(u8, lin, "deleted file mode")) {
+                if (extras.trimPrefixEnsure(lin, "deleted file mode ")) |sl| {
+                    diff.before_mode = parseTreeMode(sl) catch unreachable;
                     lineiter.index.? += lin.len + 1;
                     continue;
                 }
-                if (std.mem.startsWith(u8, lin, "old mode")) {
+                if (extras.trimPrefixEnsure(lin, "old mode ")) |sl| {
+                    diff.before_mode = parseTreeMode(sl) catch unreachable;
                     lineiter.index.? += lin.len + 1;
                     continue;
                 }
-                if (std.mem.startsWith(u8, lin, "new mode")) {
+                if (extras.trimPrefixEnsure(lin, "new mode ")) |sl| {
+                    diff.after_mode = parseTreeMode(sl) catch unreachable;
                     lineiter.index.? += lin.len + 1;
                     continue;
                 }
@@ -562,6 +570,8 @@ pub const TreeDiff = struct {
         index: [2]CommitId,
         before_path: string,
         after_path: string,
+        before_mode: Tree.Object.Mode,
+        after_mode: Tree.Object.Mode,
         adds: u32,
         subs: u32,
         content: string,
