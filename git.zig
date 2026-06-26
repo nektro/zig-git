@@ -1609,6 +1609,15 @@ pub const Repository = struct {
                             try w.writevAll(&.{ "/", name, "\n" });
                         }
                     },
+                    .T => {
+                        if (p == null) {
+                            try w.writevAll(&.{ " mode change ", &b_mode.intbytes(), " => ", &a_mode.intbytes(), " ", name, "\n" });
+                            return;
+                        }
+                        try w.writevAll(&.{ " mode change ", &b_mode.intbytes(), " => ", &a_mode.intbytes(), " " });
+                        try p.?.nprint(w);
+                        try w.writevAll(&.{ "/", name, "\n" });
+                    },
                     else => {},
                 }
             }
