@@ -132,7 +132,7 @@ pub fn revList(alloc: std.mem.Allocator, dir: nfs.Dir, comptime count: u31, from
     const t = tracer.trace(@src(), "({d}) {s} -- {s}", .{ count, from.id, sub_path });
     defer t.end();
 
-    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 50, &.{
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 10, &.{
         "git",
         "rev-list",
         "-" ++ std.fmt.comptimePrint("{d}", .{count}),
@@ -152,7 +152,7 @@ pub fn revListAll(alloc: std.mem.Allocator, dir: nfs.Dir, from: CommitId, sub_pa
     const t = tracer.trace(@src(), " {s} -- {s}", .{ from.id, sub_path });
     defer t.end();
 
-    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 50, &.{ "git", "rev-list", from.id, "--", sub_path });
+    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 10, &.{ "git", "rev-list", from.id, "--", sub_path });
     std.debug.assert(result.term == .exited and result.term.exited == 0);
     return std.mem.trimEnd(u8, result.stdout, "\n");
 }
