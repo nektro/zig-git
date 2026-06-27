@@ -802,9 +802,9 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), " {s}", .{oid});
         defer t.end();
 
-        if (r.unpacked_loose_objects.get(oid)) |obj| {
+        if (cache_behavior == .cache) if (r.unpacked_loose_objects.get(oid)) |obj| {
             return obj;
-        }
+        };
         if (oid.len == 40) blk: { //sha1 object
             var sub_path: [49:0]u8 = "objects/00/00000000000000000000000000000000000000".*;
             @memcpy(sub_path[8..][0..2], oid[0..2]);
@@ -928,7 +928,7 @@ pub const Repository = struct {
         defer t.end();
 
         const key = std.hash.Wyhash.hash(0, &(std.mem.toBytes(pack_index) ++ std.mem.toBytes(pack_offset)));
-        if (r.unpacked_objects.get(key)) |o| return o;
+        if (cache_behavior == .cache) if (r.unpacked_objects.get(key)) |o| return o;
 
         const pack_content = r.pack_content.values()[pack_index];
         if (!std.mem.eql(u8, pack_content[0..4], "PACK")) return error.InvalidGitPack;
@@ -1108,9 +1108,9 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
-        if (r.commits.getPtr(id.id)) |val| {
+        if (cache_behavior == .cache) if (r.commits.getPtr(id.id)) |val| {
             return .{ id, val.* };
-        }
+        };
         if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .commit) {
                 errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
@@ -1131,9 +1131,9 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
-        if (r.trees.getPtr(id.id)) |val| {
+        if (cache_behavior == .cache) if (r.trees.getPtr(id.id)) |val| {
             return .{ id, val.* };
-        }
+        };
         if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .tree) {
                 errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
@@ -1192,9 +1192,9 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
-        if (r.tags.getPtr(id.id)) |val| {
+        if (cache_behavior == .cache) if (r.tags.getPtr(id.id)) |val| {
             return .{ id, val.* };
-        }
+        };
         if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .tag) {
                 errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
