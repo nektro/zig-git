@@ -816,18 +816,18 @@ pub const Repository = struct {
             defer objfile.close();
             const compressed_content = try objfile.mmap();
             defer nfs.munmap(compressed_content);
-            var list: std.ArrayListUnmanaged(u8) = .empty;
-            errdefer list.deinit(r.gpa);
-            try list.ensureUnusedCapacity(r.gpa, 512);
+            var list: nio.AllocatingWriter = .init(r.gpa);
+            errdefer list.deinit();
+            try list.ensureUnusedCapacity(512);
             // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
-            try inflate_decompress(compressed_content, &list, r.gpa);
+            try inflate_decompress(compressed_content, &list);
             const data = list.items;
             const header = data[0..std.mem.indexOfScalar(u8, data, 0).?];
             const _type_s = header[0..std.mem.indexOfScalar(u8, header, ' ').?];
             const _type = std.meta.stringToEnum(RefType, _type_s).?;
             const content_len = try extras.parseDigits(u64, header[_type_s.len + 1 ..], 10);
             list.replaceRangeAssumeCapacity(0, header.len + 1, "");
-            const content = try list.toOwnedSlice(r.gpa);
+            const content = try list.toOwnedSlice();
             std.debug.assert(content.len == content_len);
             const obj: GitObject = .{ .type = _type, .content = content };
             if (cache_behavior == .cache) try r.unpacked_loose_objects.put(r.gpa, oid, obj);
@@ -959,13 +959,13 @@ pub const Repository = struct {
                     },
                     .commit, .tree, .blob, .tag => {
                         const compressed_content = packedobj_fbs.rest();
-                        var list: std.ArrayListUnmanaged(u8) = .empty;
-                        errdefer list.deinit(r.gpa);
-                        try list.ensureUnusedCapacity(r.gpa, 512);
+                        var list: nio.AllocatingWriter = .init(r.gpa);
+                        errdefer list.deinit();
+                        try list.ensureUnusedCapacity(512);
                         // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
-                        try inflate_decompress(compressed_content, &list, r.gpa);
+                        try inflate_decompress(compressed_content, &list);
                         const _type = std.meta.stringToEnum(RefType, @tagName(ty)).?;
-                        const content = try list.toOwnedSlice(r.gpa);
+                        const content = try list.toOwnedSlice();
                         const obj: GitObject = .{ .type = _type, .content = content };
                         if (cache_behavior == .cache) try r.unpacked_objects.put(r.gpa, key, obj);
                         return obj;
@@ -1001,11 +1001,11 @@ pub const Repository = struct {
 
     fn getDeltadObject(r: *Repository, maybe_oid: ?Id, key: u64, packedobj_fbs: *nio.FixedBufferStream([]const u8), size: usize, base_obj: GitObject, cache_behavior: CacheBehavior) !GitObject {
         const compressed_content = packedobj_fbs.rest();
-        var list: std.ArrayListUnmanaged(u8) = .empty;
-        defer list.deinit(r.gpa);
-        try list.ensureUnusedCapacity(r.gpa, size);
+        var list: nio.AllocatingWriter = .init(r.gpa);
+        defer list.deinit();
+        try list.ensureUnusedCapacity(size);
         // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer(r.gpa));
-        try inflate_decompress(compressed_content, &list, r.gpa);
+        try inflate_decompress(compressed_content, &list);
         std.debug.assert(list.items.len == size);
         // std.log.debug("maybe_oid={?s} size={d}", .{ maybe_oid, size });
         // std.log.debug("transformation data=[{d}]{d}", .{ list.items.len, list.items });
@@ -1640,7 +1640,7 @@ const z = @cImport({
     @cInclude("zlib.h");
 });
 
-fn inflate_decompress(in: []const u8, out: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator) !void {
+fn inflate_decompress(in: []const u8, out: *nio.AllocatingWriter) !void {
     var strm: z.z_stream = std.mem.zeroes(z.z_stream);
     {
         const ret: ZlibCode = @enumFromInt(z.inflateInit(&strm));
@@ -1672,7 +1672,7 @@ fn inflate_decompress(in: []const u8, out: *std.ArrayListUnmanaged(u8), allocato
         // Z_ERRNO
         // Z_VERSION_ERROR
         std.debug.assert(ret == .Z_OK or ret == .Z_STREAM_END);
-        try out.appendSlice(allocator, buf[0 .. buf.len - strm.avail_out]);
+        try out.writeAll(buf[0 .. buf.len - strm.avail_out]);
         if (ret == .Z_STREAM_END) break;
     }
 }
