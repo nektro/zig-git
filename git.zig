@@ -721,11 +721,13 @@ pub const Repository = struct {
     gpa: std.mem.Allocator,
     unpacked_loose_objects: std.StringArrayHashMapUnmanaged(GitObject),
     unpacked_objects: std.AutoArrayHashMapUnmanaged(u64, GitObject),
+    unpacked_objects_window: usize,
     idx_content: std.StringArrayHashMapUnmanaged([]const u8),
     pack_content: std.StringArrayHashMapUnmanaged([]const u8),
     commits: std.StringArrayHashMapUnmanaged(*Commit),
     trees: std.StringArrayHashMapUnmanaged(*Tree),
     tags: std.StringArrayHashMapUnmanaged(*Tag),
+    mailmap_content: []const u8,
     mailmap: std.hash_map.StringHashMapUnmanaged([]const u8),
     mailmap_names: std.hash_map.StringHashMapUnmanaged([]const u8),
 
@@ -737,11 +739,13 @@ pub const Repository = struct {
             .gpa = gpa,
             .unpacked_loose_objects = .empty,
             .unpacked_objects = .empty,
+            .unpacked_objects_window = 0,
             .idx_content = .empty,
             .pack_content = .empty,
             .commits = .empty,
             .trees = .empty,
             .tags = .empty,
+            .mailmap_content = "",
             .mailmap = .empty,
             .mailmap_names = .empty,
         };
@@ -795,6 +799,7 @@ pub const Repository = struct {
                 }
             }
         }
+        r.mailmap_content = mailmap_content;
         r.mailmap = mailmap;
         r.mailmap_names = mailmap_names;
     }
@@ -966,7 +971,19 @@ pub const Repository = struct {
                         const _type = std.meta.stringToEnum(RefType, @tagName(ty)).?;
                         const content = try list.toOwnedSlice();
                         const obj: GitObject = .{ .type = _type, .content = content };
-                        if (cache_behavior == .cache) try r.unpacked_objects.put(r.gpa, key, obj);
+                        const window_max = 1024 * 128;
+                        if (cache_behavior == .cache) {
+                            if (r.unpacked_objects.count() < window_max) {
+                                try r.unpacked_objects.put(r.gpa, key, obj);
+                            } else {
+                                const item = &r.unpacked_objects.values()[r.unpacked_objects_window];
+                                r.gpa.free(item.content);
+                                r.unpacked_objects.keys()[r.unpacked_objects_window] = key;
+                                item.* = obj;
+                            }
+                            r.unpacked_objects_window += 1;
+                            r.unpacked_objects_window %= window_max;
+                        }
                         return obj;
                     },
                     .ofs_delta => {
@@ -1064,7 +1081,19 @@ pub const Repository = struct {
         const _type = base_obj.type;
         const content = try list2.toOwnedSlice(r.gpa);
         const obj: GitObject = .{ .type = _type, .content = content };
-        if (cache_behavior == .cache) try r.unpacked_objects.put(r.gpa, key, obj);
+        const window_max = 1024 * 128;
+        if (cache_behavior == .cache) {
+            if (r.unpacked_objects.count() < window_max) {
+                try r.unpacked_objects.put(r.gpa, key, obj);
+            } else {
+                const item = &r.unpacked_objects.values()[r.unpacked_objects_window];
+                r.gpa.free(item.content);
+                r.unpacked_objects.keys()[r.unpacked_objects_window] = key;
+                item.* = obj;
+            }
+            r.unpacked_objects_window += 1;
+            r.unpacked_objects_window %= window_max;
+        }
         return obj;
     }
 
@@ -1090,9 +1119,9 @@ pub const Repository = struct {
     pub fn getBlob(r: *Repository, id: BlobId, cache_behavior: CacheBehavior) !?[]const u8 {
         if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .blob) {
+                if (cache_behavior == .cache) return try r.gpa.dupe(u8, obj.content);
                 return obj.content;
             }
-            if (cache_behavior == .no_cache) r.gpa.free(obj.content);
         }
         return null;
     }
@@ -1108,18 +1137,16 @@ pub const Repository = struct {
         if (cache_behavior == .cache) if (r.commits.get(id.id)) |val| {
             return .{ id, val };
         };
-        if (try r.getObject(id.id, cache_behavior)) |obj| {
+        if (try r.getObject(id.id, .cache)) |obj| {
             if (obj.type == .commit) {
-                errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
                 const raw = try r.gpa.dupe(u8, obj.content);
                 errdefer r.gpa.free(raw);
                 const commit = try r.gpa.create(Commit);
                 errdefer r.gpa.destroy(commit);
-                commit.* = try parseCommit(r.gpa, obj.content, &r.mailmap, &r.mailmap_names);
-                try r.commits.put(r.gpa, id.id, commit);
+                commit.* = try parseCommit(r.gpa, raw, &r.mailmap, &r.mailmap_names);
+                if (cache_behavior == .cache) try r.commits.put(r.gpa, id.id, commit);
                 return .{ id, commit };
             }
-            if (cache_behavior == .no_cache) r.gpa.free(obj.content);
         }
         return null;
     }
@@ -1135,25 +1162,24 @@ pub const Repository = struct {
         if (cache_behavior == .cache) if (r.trees.get(id.id)) |val| {
             return .{ id, val };
         };
-        if (try r.getObject(id.id, cache_behavior)) |obj| {
+        if (try r.getObject(id.id, .cache)) |obj| {
             if (obj.type == .tree) {
-                errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
                 const raw = try r.gpa.dupe(u8, obj.content);
                 errdefer r.gpa.free(raw);
                 var children: std.ArrayList(Tree.Object) = .empty;
                 errdefer children.deinit(r.gpa);
                 try children.ensureUnusedCapacity(r.gpa, 33);
                 var i: usize = 0;
-                while (i < obj.content.len) {
-                    const mode_end = std.mem.indexOfScalar(u8, obj.content[i..], ' ').?;
-                    const mode = obj.content[i..][0..mode_end];
+                while (i < raw.len) {
+                    const mode_end = std.mem.indexOfScalar(u8, raw[i..], ' ').?;
+                    const mode = raw[i..][0..mode_end];
                     i += mode_end + 1;
 
-                    const name_end = std.mem.indexOfScalar(u8, obj.content[i..], 0).?;
-                    const name = obj.content[i..][0..name_end :0];
+                    const name_end = std.mem.indexOfScalar(u8, raw[i..], 0).?;
+                    const name = raw[i..][0..name_end :0];
                     i += name_end + 1;
 
-                    const oid_raw = obj.content[i..][0..20].*;
+                    const oid_raw = raw[i..][0..20].*;
                     const oid_hex = extras.to_hex(oid_raw);
                     i += 20;
 
@@ -1180,11 +1206,10 @@ pub const Repository = struct {
                 };
                 const tree = try r.gpa.create(Tree);
                 errdefer r.gpa.destroy(tree);
-                tree.* = .{ .raw = obj.content, .children = children_slice };
+                tree.* = .{ .raw = raw, .children = children_slice };
                 if (cache_behavior == .cache) try r.trees.put(r.gpa, id.id, tree);
                 return .{ id, tree };
             }
-            if (cache_behavior == .no_cache) r.gpa.free(obj.content);
         }
         return null;
     }
@@ -1200,18 +1225,16 @@ pub const Repository = struct {
         if (cache_behavior == .cache) if (r.tags.get(id.id)) |val| {
             return .{ id, val };
         };
-        if (try r.getObject(id.id, cache_behavior)) |obj| {
+        if (try r.getObject(id.id, .cache)) |obj| {
             if (obj.type == .tag) {
-                errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
                 const raw = try r.gpa.dupe(u8, obj.content);
                 errdefer r.gpa.free(raw);
                 const tag = try r.gpa.create(Tag);
                 errdefer r.gpa.destroy(tag);
-                tag.* = try parseTag(obj.content);
+                tag.* = try parseTag(raw);
                 if (cache_behavior == .cache) try r.tags.put(r.gpa, id.id, tag);
                 return .{ id, tag };
             }
-            if (cache_behavior == .no_cache) r.gpa.free(obj.content);
         }
         return null;
     }
@@ -1301,9 +1324,10 @@ pub const Repository = struct {
 
         // const start = time.milliTimestamp();
 
-        const base = try r.getCommitA(base_oid.id, .cache);
-        const base_tree_id = (try traverseTo(r, base.tree, dir_path)).?;
-        const base_tree = try r.getTreeA(base_tree_id.id, .cache);
+        const base = try r.getCommitA(base_oid.id, .no_cache);
+        const base_tree_id, const base_tree_id_parent = try traverseTo(r, base.tree, dir_path);
+        defer if (base_tree_id_parent) |p| p.destroy(r);
+        const base_tree = try r.getTreeA(base_tree_id.?.id, .cache);
         const total = base_tree.children.len;
 
         var found: usize = 0;
@@ -1317,29 +1341,38 @@ pub const Repository = struct {
         var searched: usize = 1;
         var commit_id_prev = base_oid;
         var commit_id = base_oid;
+        var commit_prev_prev: ?*Commit = null;
+        var commit_prev: ?*Commit = null;
         var commit = base;
-        var tree_id = base_tree_id;
-        while (true) {
-            if (commit.parents.len == 0) break;
-            commit_id, commit = (try r.getCommit(commit.parents[0], .cache)).?;
+        var tree_id = base_tree_id.?;
+        while (true) : ({
+            if (commit_prev_prev) |p| p.destroy(r);
+            commit_prev_prev = commit_prev;
+            commit_prev = commit;
+            commit_id_prev = commit_id;
+            commit_id, commit = (try r.getCommit(commit.parents[0], .no_cache)).?;
+        }) {
             searched += 1;
-            defer commit_id_prev = commit_id;
-            const new_tree_id = try traverseTo(r, commit.tree, dir_path) orelse {
+            if (commit.parents.len == 0) break;
+            const new_tree_id, const new_tree_id_parent = try traverseTo(r, commit.tree, dir_path);
+            defer if (new_tree_id_parent) |p| p.destroy(r);
+            if (new_tree_id == null) {
                 var i: usize = 0;
                 while (findFirstUnset(set, i)) |j| : (i += 1) {
                     i = j;
                     const k = result.keys()[i];
                     found += 1;
-                    result.putAssumeCapacity(k, commit_id_prev);
+                    result.putAssumeCapacity(k, .{ .id = (try r.gpa.dupe(u8, commit_id_prev.id))[0..40] });
                     set.set(i);
                     // std.log.debug("found [{d}/{d}] objects after searching {d} commits, found {s}", .{ found, total, searched, k });
                     continue;
                 }
                 break;
-            };
-            if (new_tree_id.eql(tree_id)) continue;
-            tree_id = new_tree_id;
-            const tree = try r.getTreeA(tree_id.id, .cache);
+            }
+            if (new_tree_id.?.eql(tree_id)) continue;
+            tree_id = new_tree_id.?;
+            const tree = try r.getTreeA(tree_id.id, .no_cache);
+            defer tree.destroy(r);
             var i: usize = 0;
             while (findFirstUnset(set, i)) |j| : (i += 1) {
                 i = j;
@@ -1347,14 +1380,14 @@ pub const Repository = struct {
                 const new = tree.get(k);
                 if (new == null) {
                     found += 1;
-                    result.putAssumeCapacity(k, commit_id_prev);
+                    result.putAssumeCapacity(k, .{ .id = (try r.gpa.dupe(u8, commit_id_prev.id))[0..40] });
                     set.set(i);
                     // std.log.debug("found [{d}/{d}] objects after searching {d} commits, at {d} found {s}", .{ found, total, searched, i, k });
                     continue;
                 }
                 if (!std.mem.eql(u8, new.?.id.erase(), base_tree.children[i].id.erase())) {
                     found += 1;
-                    result.putAssumeCapacity(k, commit_id_prev);
+                    result.putAssumeCapacity(k, .{ .id = (try r.gpa.dupe(u8, commit_id_prev.id))[0..40] });
                     set.set(i);
                     // std.log.debug("found [{d}/{d}] objects after searching {d} commits, at {d} found {s}", .{ found, total, searched, i, k });
                     continue;
@@ -1709,17 +1742,21 @@ const ZlibCode = enum(c_int) {
     Z_VERSION_ERROR = -6,
 };
 
-fn traverseTo(r: *Repository, treestart_id: TreeId, dir_path: []const u8) !?TreeId {
+fn traverseTo(r: *Repository, treestart_id: TreeId, dir_path: []const u8) !struct { ?TreeId, ?*Tree } {
     var id = treestart_id;
-    if (dir_path.len == 0) return id;
+    if (dir_path.len == 0) return .{ id, null };
     var iter = std.mem.splitScalar(u8, dir_path, '/');
+    var prev: ?*Tree = null;
     while (iter.next()) |segment| {
-        const tree = try r.getTreeA(id.id, .cache);
-        const o = tree.get(segment) orelse return null;
-        if (o.id != .tree) return null;
+        const p = prev;
+        const tree = try r.getTreeA(id.id, .no_cache);
+        defer prev = tree;
+        if (p) |_| p.?.destroy(r);
+        const o = tree.get(segment) orelse return .{ null, tree };
+        if (o.id != .tree) return .{ null, tree };
         id = o.id.tree;
     }
-    return id;
+    return .{ id, prev };
 }
 
 pub const Tree = struct {
