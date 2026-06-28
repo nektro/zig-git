@@ -725,7 +725,7 @@ pub const Repository = struct {
     pack_content: std.StringArrayHashMapUnmanaged([]const u8),
     commits: std.StringArrayHashMapUnmanaged(Commit),
     trees: std.StringArrayHashMapUnmanaged(Tree),
-    tags: std.StringArrayHashMapUnmanaged(Tag),
+    tags: std.StringArrayHashMapUnmanaged(*Tag),
     mailmap: std.hash_map.StringHashMapUnmanaged([]const u8),
     mailmap_names: std.hash_map.StringHashMapUnmanaged([]const u8),
 
@@ -761,6 +761,7 @@ pub const Repository = struct {
         r.commits.deinit(r.gpa);
         for (r.trees.values()) |*v| r.gpa.free(v.children);
         r.trees.deinit(r.gpa);
+        for (r.tags.values()) |v| v.destroy(r);
         r.tags.deinit(r.gpa);
         r.mailmap.deinit(r.gpa);
         r.mailmap_names.deinit(r.gpa);
@@ -1185,7 +1186,7 @@ pub const Repository = struct {
         return (try r.getTree(.{ .id = id }, cache_behavior)).?.@"1";
     }
 
-    pub fn getTag(r: *Repository, id: TagId, cache_behavior: CacheBehavior) !?struct { TagId, Tag } {
+    pub fn getTag(r: *Repository, id: TagId, cache_behavior: CacheBehavior) !?struct { TagId, *Tag } {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
@@ -1195,7 +1196,11 @@ pub const Repository = struct {
         if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .tag) {
                 errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
-                const tag = try parseTag(obj.content);
+                const raw = try r.gpa.dupe(u8, obj.content);
+                errdefer r.gpa.free(raw);
+                const tag = try r.gpa.create(Tag);
+                errdefer r.gpa.destroy(tag);
+                tag.* = try parseTag(obj.content);
                 if (cache_behavior == .cache) try r.tags.put(r.gpa, id.id, tag);
                 return .{ id, tag };
             }
@@ -1204,7 +1209,7 @@ pub const Repository = struct {
         return null;
     }
 
-    pub fn getTagA(r: *Repository, id: Id, cache_behavior: CacheBehavior) !Tag {
+    pub fn getTagA(r: *Repository, id: Id, cache_behavior: CacheBehavior) !*Tag {
         return (try r.getTag(.{ .id = id }, cache_behavior)).?.@"1";
     }
 
@@ -2028,6 +2033,11 @@ pub const Tag = struct {
     type: RefType,
     tagger: ?UserAndAt,
     message: string,
+
+    pub fn destroy(t: *Tag, r: *Repository) void {
+        r.gpa.free(t.raw);
+        r.gpa.destroy(t);
+    }
 };
 
 pub const Ref = struct {
