@@ -1137,9 +1137,9 @@ pub const Repository = struct {
         if (cache_behavior == .cache) if (r.commits.get(id.id)) |val| {
             return .{ id, val };
         };
-        if (try r.getObject(id.id, .cache)) |obj| {
+        if (try r.getObject(id.id, .no_cache)) |obj| {
             if (obj.type == .commit) {
-                const raw = try r.gpa.dupe(u8, obj.content);
+                const raw = obj.content;
                 errdefer r.gpa.free(raw);
                 const commit = try r.gpa.create(Commit);
                 errdefer r.gpa.destroy(commit);
@@ -1147,6 +1147,7 @@ pub const Repository = struct {
                 if (cache_behavior == .cache) try r.commits.put(r.gpa, id.id, commit);
                 return .{ id, commit };
             }
+            r.gpa.free(obj.content);
         }
         return null;
     }
