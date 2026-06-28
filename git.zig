@@ -723,7 +723,7 @@ pub const Repository = struct {
     unpacked_objects: std.AutoArrayHashMapUnmanaged(u64, GitObject),
     idx_content: std.StringArrayHashMapUnmanaged([]const u8),
     pack_content: std.StringArrayHashMapUnmanaged([]const u8),
-    commits: std.StringArrayHashMapUnmanaged(Commit),
+    commits: std.StringArrayHashMapUnmanaged(*Commit),
     trees: std.StringArrayHashMapUnmanaged(*Tree),
     tags: std.StringArrayHashMapUnmanaged(*Tag),
     mailmap: std.hash_map.StringHashMapUnmanaged([]const u8),
@@ -757,7 +757,7 @@ pub const Repository = struct {
         r.idx_content.deinit(r.gpa);
         for (r.pack_content.values()) |v| nfs.munmap(v);
         r.pack_content.deinit(r.gpa);
-        for (r.commits.values()) |v| r.gpa.free(v.parents);
+        for (r.commits.values()) |v| v.destroy(r);
         r.commits.deinit(r.gpa);
         for (r.trees.values()) |v| v.destroy(r);
         r.trees.deinit(r.gpa);
@@ -1102,17 +1102,21 @@ pub const Repository = struct {
         return (try r.getBlob(.{ .id = id }, cache_behavior)).?;
     }
 
-    pub fn getCommit(r: *Repository, id: CommitId, cache_behavior: CacheBehavior) !?struct { CommitId, Commit } {
+    pub fn getCommit(r: *Repository, id: CommitId, cache_behavior: CacheBehavior) !?struct { CommitId, *Commit } {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
-        if (cache_behavior == .cache) if (r.commits.getPtr(id.id)) |val| {
-            return .{ id, val.* };
+        if (cache_behavior == .cache) if (r.commits.get(id.id)) |val| {
+            return .{ id, val };
         };
         if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .commit) {
                 errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
-                const commit = try parseCommit(r.gpa, obj.content, &r.mailmap, &r.mailmap_names);
+                const raw = try r.gpa.dupe(u8, obj.content);
+                errdefer r.gpa.free(raw);
+                const commit = try r.gpa.create(Commit);
+                errdefer r.gpa.destroy(commit);
+                commit.* = try parseCommit(r.gpa, obj.content, &r.mailmap, &r.mailmap_names);
                 try r.commits.put(r.gpa, id.id, commit);
                 return .{ id, commit };
             }
@@ -1121,7 +1125,7 @@ pub const Repository = struct {
         return null;
     }
 
-    pub fn getCommitA(r: *Repository, id: Id, cache_behavior: CacheBehavior) !Commit {
+    pub fn getCommitA(r: *Repository, id: Id, cache_behavior: CacheBehavior) !*Commit {
         return (try r.getCommit(.{ .id = id }, cache_behavior)).?.@"1";
     }
 
@@ -2029,6 +2033,12 @@ pub const Commit = struct {
     author: UserAndAt,
     committer: UserAndAt,
     message: string,
+
+    pub fn destroy(t: *Commit, r: *Repository) void {
+        r.gpa.free(t.parents);
+        r.gpa.free(t.raw);
+        r.gpa.destroy(t);
+    }
 };
 
 pub const UserAndAt = struct {
