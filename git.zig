@@ -819,7 +819,6 @@ pub const Repository = struct {
             var list: nio.AllocatingWriter = .init(r.gpa);
             errdefer list.deinit();
             try list.ensureUnusedCapacity(512);
-            // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
             try inflate_decompress(compressed_content, &list);
             const data = list.items;
             const header = data[0..std.mem.indexOfScalar(u8, data, 0).?];
@@ -962,7 +961,6 @@ pub const Repository = struct {
                         var list: nio.AllocatingWriter = .init(r.gpa);
                         errdefer list.deinit();
                         try list.ensureUnusedCapacity(512);
-                        // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer());
                         try inflate_decompress(compressed_content, &list);
                         const _type = std.meta.stringToEnum(RefType, @tagName(ty)).?;
                         const content = try list.toOwnedSlice();
@@ -1004,7 +1002,6 @@ pub const Repository = struct {
         var list: nio.AllocatingWriter = .init(r.gpa);
         defer list.deinit();
         try list.ensureUnusedCapacity(size);
-        // try std.compress.flate.inflate.decompress(.zlib, bufr.anyReadable(), list.writer(r.gpa));
         try inflate_decompress(compressed_content, &list);
         std.debug.assert(list.items.len == size);
         // std.log.debug("maybe_oid={?s} size={d}", .{ maybe_oid, size });
@@ -1641,6 +1638,17 @@ const z = @cImport({
 });
 
 fn inflate_decompress(in: []const u8, out: *nio.AllocatingWriter) !void {
+    // {
+    //     var reader: std.Io.Reader = .fixed(in);
+    //     var buf: [std.compress.flate.max_window_len]u8 = @splat(0);
+    //     var d: std.compress.flate.Decompress = .init(&reader, .zlib, &buf);
+    //     var w = out.anyWritable().toStd(&.{});
+    //     _ = d.reader.streamRemaining(&w.sw) catch |err| switch (err) {
+    //         error.ReadFailed => return d.err.?,
+    //         error.WriteFailed => return error.OutOfMemory,
+    //     };
+    //     return;
+    // }
     var strm: z.z_stream = std.mem.zeroes(z.z_stream);
     {
         const ret: ZlibCode = @enumFromInt(z.inflateInit(&strm));
