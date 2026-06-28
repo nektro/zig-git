@@ -724,7 +724,7 @@ pub const Repository = struct {
     idx_content: std.StringArrayHashMapUnmanaged([]const u8),
     pack_content: std.StringArrayHashMapUnmanaged([]const u8),
     commits: std.StringArrayHashMapUnmanaged(Commit),
-    trees: std.StringArrayHashMapUnmanaged(Tree),
+    trees: std.StringArrayHashMapUnmanaged(*Tree),
     tags: std.StringArrayHashMapUnmanaged(*Tag),
     mailmap: std.hash_map.StringHashMapUnmanaged([]const u8),
     mailmap_names: std.hash_map.StringHashMapUnmanaged([]const u8),
@@ -759,7 +759,7 @@ pub const Repository = struct {
         r.pack_content.deinit(r.gpa);
         for (r.commits.values()) |v| r.gpa.free(v.parents);
         r.commits.deinit(r.gpa);
-        for (r.trees.values()) |*v| r.gpa.free(v.children);
+        for (r.trees.values()) |v| v.destroy(r);
         r.trees.deinit(r.gpa);
         for (r.tags.values()) |v| v.destroy(r);
         r.tags.deinit(r.gpa);
@@ -1125,16 +1125,18 @@ pub const Repository = struct {
         return (try r.getCommit(.{ .id = id }, cache_behavior)).?.@"1";
     }
 
-    pub fn getTree(r: *Repository, id: TreeId, cache_behavior: CacheBehavior) !?struct { TreeId, Tree } {
+    pub fn getTree(r: *Repository, id: TreeId, cache_behavior: CacheBehavior) !?struct { TreeId, *Tree } {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
-        if (cache_behavior == .cache) if (r.trees.getPtr(id.id)) |val| {
-            return .{ id, val.* };
+        if (cache_behavior == .cache) if (r.trees.get(id.id)) |val| {
+            return .{ id, val };
         };
         if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .tree) {
                 errdefer if (cache_behavior == .no_cache) r.gpa.free(obj.content);
+                const raw = try r.gpa.dupe(u8, obj.content);
+                errdefer r.gpa.free(raw);
                 var children: std.ArrayList(Tree.Object) = .empty;
                 errdefer children.deinit(r.gpa);
                 try children.ensureUnusedCapacity(r.gpa, 33);
@@ -1173,7 +1175,9 @@ pub const Repository = struct {
                     .symlink => .{ .blob = .{ .id = &item.id_bytes } },
                     .none => unreachable,
                 };
-                const tree: Tree = .{ .raw = obj.content, .children = children_slice };
+                const tree = try r.gpa.create(Tree);
+                errdefer r.gpa.destroy(tree);
+                tree.* = .{ .raw = obj.content, .children = children_slice };
                 if (cache_behavior == .cache) try r.trees.put(r.gpa, id.id, tree);
                 return .{ id, tree };
             }
@@ -1182,7 +1186,7 @@ pub const Repository = struct {
         return null;
     }
 
-    pub fn getTreeA(r: *Repository, id: Id, cache_behavior: CacheBehavior) !Tree {
+    pub fn getTreeA(r: *Repository, id: Id, cache_behavior: CacheBehavior) !*Tree {
         return (try r.getTree(.{ .id = id }, cache_behavior)).?.@"1";
     }
 
@@ -1190,8 +1194,8 @@ pub const Repository = struct {
         const t = tracer.trace(@src(), " {s}", .{id.id});
         defer t.end();
 
-        if (cache_behavior == .cache) if (r.tags.getPtr(id.id)) |val| {
-            return .{ id, val.* };
+        if (cache_behavior == .cache) if (r.tags.get(id.id)) |val| {
+            return .{ id, val };
         };
         if (try r.getObject(id.id, cache_behavior)) |obj| {
             if (obj.type == .tag) {
@@ -1719,7 +1723,13 @@ pub const Tree = struct {
     raw: []const u8,
     children: []const Object,
 
-    pub fn get(self: Tree, name: string) ?Object {
+    pub fn destroy(t: *Tree, r: *Repository) void {
+        r.gpa.free(t.children);
+        r.gpa.free(t.raw);
+        r.gpa.destroy(t);
+    }
+
+    pub fn get(self: *Tree, name: string) ?Object {
         // modified std.sort.binarySearch
         const i = blk: {
             var low: usize = 0;
@@ -1749,13 +1759,13 @@ pub const Tree = struct {
         return self.children[i];
     }
 
-    pub fn getBlob(self: Tree, name: string, hint: Object.Type) ?Object {
+    pub fn getBlob(self: *Tree, name: string, hint: Object.Type) ?Object {
         const o = self.get(name, hint) orelse return null;
         if (o.id != .blob) return null;
         return o;
     }
 
-    pub fn find(self: Tree, name: string) ?Object {
+    pub fn find(self: *Tree, name: string) ?Object {
         for (self.children, 0..) |item, i| {
             if (std.ascii.eqlIgnoreCase(item.name, name)) {
                 return self.children[i];
@@ -1764,7 +1774,7 @@ pub const Tree = struct {
         return null;
     }
 
-    pub fn findBlob(self: Tree, name: string) ?Object {
+    pub fn findBlob(self: *Tree, name: string) ?Object {
         const o = self.find(name) orelse return null;
         if (o.id != .blob) return null;
         return o;
@@ -1929,7 +1939,7 @@ pub const Tree = struct {
         };
     };
 
-    pub fn walk(self: Tree, r: *Repository) !Walker {
+    pub fn walk(self: *Tree, r: *Repository) !Walker {
         var stack: std.ArrayListUnmanaged(Walker.StackItem) = .empty;
 
         try stack.append(r.gpa, .{
@@ -1955,7 +1965,7 @@ pub const Tree = struct {
         };
 
         const StackItem = struct {
-            tree: Tree,
+            tree: *Tree,
             idx: usize,
             dirname_len: usize,
         };
