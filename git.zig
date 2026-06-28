@@ -861,7 +861,7 @@ pub const Repository = struct {
         }
         const pack_index, const pack_offset = try r.getObjectPackIndex(oid) orelse return null;
         // parse .pack
-        return try r.getPackedObject(oid, pack_index, pack_offset, cache_behavior);
+        return try r.getPackedObject(pack_index, pack_offset, cache_behavior);
     }
 
     fn getObjectPackIndex(r: *Repository, oid: Id) !?[2]usize {
@@ -923,8 +923,8 @@ pub const Repository = struct {
         return null;
     }
 
-    fn getPackedObject(r: *Repository, maybe_oid: ?Id, pack_index: usize, pack_offset: usize, cache_behavior: CacheBehavior) !GitObject {
-        const t = tracer.trace(@src(), " {?s} {d} {d} {s}", .{ maybe_oid, pack_index, pack_offset, r.pack_content.keys()[pack_index] });
+    fn getPackedObject(r: *Repository, pack_index: usize, pack_offset: usize, cache_behavior: CacheBehavior) !GitObject {
+        const t = tracer.trace(@src(), " {d} {d} {s}", .{ pack_index, pack_offset, r.pack_content.keys()[pack_index] });
         defer t.end();
 
         const key = std.hash.Wyhash.hash(0, &(std.mem.toBytes(pack_index) ++ std.mem.toBytes(pack_offset)));
@@ -978,15 +978,15 @@ pub const Repository = struct {
                             offset += 1;
                         }
                         const base_pack_offset = pack_offset - offset;
-                        const base_obj = try r.getPackedObject(null, pack_index, base_pack_offset, cache_behavior);
+                        const base_obj = try r.getPackedObject(pack_index, base_pack_offset, cache_behavior);
                         defer if (cache_behavior == .no_cache) r.gpa.free(base_obj.content);
-                        return r.getDeltadObject(maybe_oid, key, &packedobj_fbs, size, base_obj, cache_behavior);
+                        return r.getDeltadObject(key, &packedobj_fbs, size, base_obj, cache_behavior);
                     },
                     .ref_delta => {
                         const base_oid = extras.to_hex(packedobj_fbs.takeSlice(20)[0..20].*);
                         const base_obj = (try r.getObject(&base_oid, cache_behavior)).?;
                         defer if (cache_behavior == .no_cache) r.gpa.free(base_obj.content);
-                        return r.getDeltadObject(maybe_oid, key, &packedobj_fbs, size, base_obj, cache_behavior);
+                        return r.getDeltadObject(key, &packedobj_fbs, size, base_obj, cache_behavior);
                     },
                 }
                 comptime unreachable;
@@ -998,7 +998,7 @@ pub const Repository = struct {
         }
     }
 
-    fn getDeltadObject(r: *Repository, maybe_oid: ?Id, key: u64, packedobj_fbs: *nio.FixedBufferStream([]const u8), size: usize, base_obj: GitObject, cache_behavior: CacheBehavior) !GitObject {
+    fn getDeltadObject(r: *Repository, key: u64, packedobj_fbs: *nio.FixedBufferStream([]const u8), size: usize, base_obj: GitObject, cache_behavior: CacheBehavior) !GitObject {
         const compressed_content = packedobj_fbs.rest();
         var list: nio.AllocatingWriter = .init(r.gpa);
         defer list.deinit();
@@ -1064,7 +1064,6 @@ pub const Repository = struct {
         const _type = base_obj.type;
         const content = try list2.toOwnedSlice(r.gpa);
         const obj: GitObject = .{ .type = _type, .content = content };
-        _ = maybe_oid;
         if (cache_behavior == .cache) try r.unpacked_objects.put(r.gpa, key, obj);
         return obj;
     }
