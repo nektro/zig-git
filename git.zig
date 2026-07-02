@@ -128,26 +128,6 @@ pub fn ensureObjId(comptime T: type, input: string) T {
 // TODO make a version of this that accepts an array of sub_paths and searches all of them at once, so as to not lose spot in history when searching for many old paths
 // https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 // https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn revList(alloc: std.mem.Allocator, dir: nfs.Dir, comptime count: u31, from: CommitId, sub_path: string) !string {
-    const t = tracer.trace(@src(), "({d}) {s} -- {s}", .{ count, from.id, sub_path });
-    defer t.end();
-
-    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 10, &.{
-        "git",
-        "rev-list",
-        "-" ++ std.fmt.comptimePrint("{d}", .{count}),
-        from.id,
-        "--",
-        sub_path,
-    });
-    std.debug.assert(result.term == .exited and result.term.exited == 0);
-    return std.mem.trimEnd(u8, result.stdout, "\n");
-}
-
-// TODO make this inspect .git/objects manually
-// TODO make a version of this that accepts an array of sub_paths and searches all of them at once, so as to not lose spot in history when searching for many old paths
-// https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
-// https://git-scm.com/book/en/v2/Git-Internals-Packfiles
 pub fn revListAll(alloc: std.mem.Allocator, dir: nfs.Dir, from: CommitId, sub_path: string) !string {
     const t = tracer.trace(@src(), " {s} -- {s}", .{ from.id, sub_path });
     defer t.end();
