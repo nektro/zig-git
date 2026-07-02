@@ -124,19 +124,6 @@ pub fn ensureObjId(comptime T: type, input: string) T {
     return .{ .id = input[0..40] };
 }
 
-// TODO make this inspect .git/objects manually
-// TODO make a version of this that accepts an array of sub_paths and searches all of them at once, so as to not lose spot in history when searching for many old paths
-// https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
-// https://git-scm.com/book/en/v2/Git-Internals-Packfiles
-pub fn revListAll(alloc: std.mem.Allocator, dir: nfs.Dir, from: CommitId, sub_path: string) !string {
-    const t = tracer.trace(@src(), " {s} -- {s}", .{ from.id, sub_path });
-    defer t.end();
-
-    const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 10, &.{ "git", "rev-list", from.id, "--", sub_path });
-    std.debug.assert(result.term == .exited and result.term.exited == 0);
-    return std.mem.trimEnd(u8, result.stdout, "\n");
-}
-
 pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string, mailmap: *const std.hash_map.StringHashMapUnmanaged([]const u8), mailmap_names: *const std.hash_map.StringHashMapUnmanaged([]const u8)) !Commit {
     const t = tracer.trace(@src(), "", .{});
     defer t.end();
@@ -1657,6 +1644,55 @@ pub const Repository = struct {
         };
         return diffFileIterator(r, writable, parentid, commitid, S);
     }
+
+    pub fn revListAll(r: *Repository, alloc: std.mem.Allocator, from: CommitId, sub_path: string) ![]const u8 {
+        const t = tracer.trace(@src(), " {s} -- {s}", .{ from.id, sub_path });
+        defer t.end();
+
+        var list: std.ArrayList(u8) = .empty;
+        errdefer list.deinit(alloc);
+
+        const base = try r.getCommitA(from.id, .no_cache);
+        const base_tree = try r.getTreeA(base.tree.id, .no_cache);
+        const base_id, const base_id_parent = (try idFor(r, base_tree, sub_path)).?;
+
+        var prev_prev_commit: ?*Commit = null;
+        var prev_commit = base;
+        var prev_tree = base_id_parent;
+        var prev_id = try r.gpa.dupe(u8, base_id);
+        defer r.gpa.free(prev_id);
+
+        while (true) {
+            if (prev_commit.parents.len == 0) {
+                try list.appendSlice(alloc, prev_prev_commit.?.parents[0].id ++ "\n");
+                break;
+            }
+            const next_commit = try r.getCommitA(prev_commit.parents[0].id, .no_cache);
+            const next_commit_tree = try r.getTreeA(next_commit.tree.id, .no_cache);
+            const next_id, const next_tree = try idFor(r, next_commit_tree, sub_path) orelse {
+                try list.appendSlice(alloc, prev_prev_commit.?.parents[0].id ++ "\n");
+                break;
+            };
+            if (std.mem.eql(u8, next_id, prev_id)) {
+                if (prev_prev_commit) |p| p.destroy(r);
+                prev_prev_commit = prev_commit;
+                prev_commit = next_commit;
+                prev_tree = next_tree;
+                continue;
+            }
+            try list.appendSlice(alloc, prev_prev_commit.?.parents[0].id ++ "\n");
+            if (prev_prev_commit) |p| p.destroy(r);
+            prev_prev_commit = prev_commit;
+            prev_commit = next_commit;
+            prev_tree = next_tree;
+
+            r.gpa.free(prev_id);
+            prev_id = try r.gpa.dupe(u8, next_id);
+            continue;
+        }
+
+        return list.toOwnedSlice(alloc);
+    }
 };
 
 const z = @cImport({
@@ -2112,3 +2148,28 @@ const PathListNode = struct {
         try writable.writevAll(&.{ "/", node.data });
     }
 };
+
+/// Consumes 'tree' and returns a new owned 'Tree' in the tuple.
+pub fn idFor(r: *Repository, tree: *Tree, sub_path: []const u8) !?struct { Id, *Tree } {
+    const s_idx = std.mem.indexOfScalar(u8, sub_path, '/');
+    const seg = sub_path[0 .. s_idx orelse sub_path.len];
+    const obj = tree.get(seg) orelse {
+        tree.destroy(r);
+        return null;
+    };
+    switch (obj.id) {
+        .tree => |id| {
+            defer tree.destroy(r);
+            if (s_idx == null) return null;
+            const new_tree = try r.getTreeA(id.id, .no_cache);
+            return idFor(r, new_tree, sub_path[s_idx.? + 1 ..]);
+        },
+        else => |id| {
+            if (s_idx != null) {
+                tree.destroy(r);
+                return null;
+            }
+            return .{ id.erase(), tree };
+        },
+    }
+}
