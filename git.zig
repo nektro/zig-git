@@ -1695,7 +1695,7 @@ pub const Repository = struct {
                 prev_tree = next_tree;
                 continue;
             }
-            try list.appendSlice(alloc, prev_prev_commit.?.parents[0].id ++ "\n");
+            try list.appendSlice(alloc, (if (prev_prev_commit) |p| p.parents[0].id else from.id) ++ "\n");
             if (prev_prev_commit) |p| p.destroy(r);
             prev_prev_commit = prev_commit;
             prev_commit = next_commit;
