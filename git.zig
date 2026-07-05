@@ -1658,23 +1658,37 @@ pub const Repository = struct {
 
         var prev_prev_commit: ?*Commit = null;
         var prev_commit = base;
-        var prev_tree = base_id_parent;
+        var prev_tree: ?*Tree = base_id_parent;
         var prev_obj = try r.gpa.create(Tree.Object);
         prev_obj.* = base_obj.*;
         defer r.gpa.destroy(prev_obj);
 
         while (true) {
             if (prev_commit.parents.len == 0) {
-                try list.appendSlice(alloc, prev_prev_commit.?.parents[0].id ++ "\n");
+                if (prev_tree != null) {
+                    try list.appendSlice(alloc, prev_prev_commit.?.parents[0].id ++ "\n");
+                }
                 break;
             }
             const next_commit = try r.getCommitA(prev_commit.parents[0].id, .no_cache);
             const next_commit_tree = try r.getTreeA(next_commit.tree.id, .no_cache);
             const next_obj, const next_tree = try idFor(r, next_commit_tree, sub_path) orelse {
+                if (prev_tree == null) {
+                    if (prev_prev_commit) |p| p.destroy(r);
+                    prev_prev_commit = prev_commit;
+                    prev_commit = next_commit;
+                    prev_tree = null;
+                    continue;
+                }
                 try list.appendSlice(alloc, prev_prev_commit.?.parents[0].id ++ "\n");
-                break;
+                // break; // we don't pass --remove-empty
+                if (prev_prev_commit) |p| p.destroy(r);
+                prev_prev_commit = prev_commit;
+                prev_commit = next_commit;
+                prev_tree = null;
+                continue;
             };
-            if (std.mem.eql(u8, &next_obj.id_bytes, &prev_obj.id_bytes) and next_obj.mode.eql(prev_obj.mode)) {
+            if (prev_tree != null and std.mem.eql(u8, &next_obj.id_bytes, &prev_obj.id_bytes) and next_obj.mode.eql(prev_obj.mode)) {
                 if (prev_prev_commit) |p| p.destroy(r);
                 prev_prev_commit = prev_commit;
                 prev_commit = next_commit;
