@@ -2199,10 +2199,15 @@ pub const Signature = union(enum) {
             const sigversion = try b64r.readInt(u32, .big);
             if (sigversion != 1) return .unrecognized;
             const publickey = try b64r.readAlloc(allocator, try b64r.readInt(u32, .big));
+            errdefer allocator.free(publickey);
             const namespace = try b64r.readAlloc(allocator, try b64r.readInt(u32, .big));
+            defer allocator.free(namespace);
             const reserved = try b64r.readAlloc(allocator, try b64r.readInt(u32, .big));
+            defer allocator.free(reserved);
             const hash_algorithm = try b64r.readAlloc(allocator, try b64r.readInt(u32, .big));
+            errdefer allocator.free(hash_algorithm);
             const signature = try b64r.readAlloc(allocator, try b64r.readInt(u32, .big));
+            errdefer allocator.free(signature);
             if (!std.mem.eql(u8, namespace, "git")) return .unrecognized;
             if (reserved.len > 0) return .unrecognized;
 
