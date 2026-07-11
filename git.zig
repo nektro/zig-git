@@ -135,11 +135,14 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string, mailmap: *const
         .parents = undefined,
         .author = undefined,
         .committer = undefined,
+        .gpgsig = "",
         .message = undefined,
     };
     var parents = std.array_list.Managed(CommitId).init(alloc);
     errdefer parents.deinit();
+    var f_start: usize = 0;
     while (true) {
+        const line_start = iter.index.?;
         const line = iter.next() orelse break;
         if (line.len == 0) break;
         const space = std.mem.indexOfScalar(u8, line, ' ').?;
@@ -149,6 +152,19 @@ pub fn parseCommit(alloc: std.mem.Allocator, commitfile: string, mailmap: *const
         if (std.mem.eql(u8, k, "author")) result.author = try parseCommitUserAndAt(line[space + 1 ..]);
         if (std.mem.eql(u8, k, "committer")) result.committer = try parseCommitUserAndAt(line[space + 1 ..]);
         if (std.mem.eql(u8, k, "parent")) try parents.append(.{ .id = line[space + 1 ..][0..40] });
+        if (std.mem.eql(u8, k, "gpgsig")) {
+            f_start = line_start + 7;
+            _ = iter.next().?;
+            while (true) {
+                const line2_start = iter.index.?;
+                const line2 = iter.next() orelse break;
+                if (line2.len == 0 or line2[0] != ' ') {
+                    iter.index = line2_start;
+                    break;
+                }
+            }
+            result.gpgsig = commitfile[f_start .. iter.index.? - 1];
+        }
     }
     result.parents = try parents.toOwnedSlice();
     result.author.email = mailmap.get(result.author.email) orelse result.author.email;
@@ -559,6 +575,7 @@ pub fn parseTag(tagfile: string) !Tag {
         .object = undefined,
         .type = undefined,
         .tagger = null,
+        .gpgsig = "",
         .message = undefined,
     };
     const object = extras.trimPrefixEnsure(iter.next().?, "object ").?;
@@ -568,13 +585,27 @@ pub fn parseTag(tagfile: string) !Tag {
     result.type = std.meta.stringToEnum(RefType, ty).?;
     const tag = extras.trimPrefixEnsure(iter.next().?, "tag ").?;
     _ = tag;
-
+    var f_start: usize = 0;
     while (true) {
+        const line_start = iter.index.?;
         const line = iter.next() orelse break;
         if (line.len == 0) break;
         const space = std.mem.indexOfScalar(u8, line, ' ').?;
         const k = line[0..space];
         if (std.mem.eql(u8, k, "tagger")) result.tagger = try parseCommitUserAndAt(line[space + 1 ..]);
+        if (std.mem.eql(u8, k, "gpgsig")) {
+            f_start = line_start + 7;
+            _ = iter.next().?;
+            while (true) {
+                const line2_start = iter.index.?;
+                const line2 = iter.next() orelse break;
+                if (line2.len == 0 or line2[0] != ' ') {
+                    iter.index = line2_start;
+                    break;
+                }
+            }
+            result.gpgsig = tagfile[f_start .. iter.index.? - 1];
+        }
     }
     result.message = iter.rest();
     return result;
@@ -2096,12 +2127,17 @@ pub const Commit = struct {
     parents: []const CommitId,
     author: UserAndAt,
     committer: UserAndAt,
+    gpgsig: []const u8,
     message: string,
 
     pub fn destroy(t: *Commit, r: *Repository) void {
         r.gpa.free(t.parents);
         r.gpa.free(t.raw);
         r.gpa.destroy(t);
+    }
+
+    pub fn signature(t: *const Commit, allocator: std.mem.Allocator) !Signature {
+        return .from(allocator, t.gpgsig, t.raw);
     }
 };
 
@@ -2116,11 +2152,16 @@ pub const Tag = struct {
     object: Id,
     type: RefType,
     tagger: ?UserAndAt,
+    gpgsig: []const u8,
     message: string,
 
     pub fn destroy(t: *Tag, r: *Repository) void {
         r.gpa.free(t.raw);
         r.gpa.destroy(t);
+    }
+
+    pub fn signature(t: *const Tag, allocator: std.mem.Allocator) !Signature {
+        return .from(allocator, t.gpgsig, t.raw);
     }
 };
 
@@ -2128,6 +2169,136 @@ pub const Ref = struct {
     label: string,
     oid: Id,
     commit: ?Id,
+};
+
+pub const Signature = union(enum) {
+    none,
+    unrecognized,
+    ssh: Ssh,
+
+    pub const Ssh = struct {
+        publickey: []const u8,
+        hash_algorithm: []const u8,
+        signature: []const u8,
+        valid: ?bool,
+    };
+
+    // https://www.ietf.org/archive/id/draft-josefsson-sshsig-format-03.html
+    // https://datatracker.ietf.org/doc/html/rfc4251#section-5
+    // https://pkg.go.dev/golang.org/x/crypto/ssh#pkg-constants
+    pub fn from(allocator: std.mem.Allocator, pem_sig: []const u8, content_plus_gpgsig: []const u8) !Signature {
+        if (pem_sig.len == 0) {
+            return .none;
+        }
+        if (std.mem.startsWith(u8, pem_sig, "-----BEGIN SSH SIGNATURE-----\n") and std.mem.endsWith(u8, pem_sig, "\n -----END SSH SIGNATURE-----")) {
+            const sigcontent = pem_sig[30 .. pem_sig.len - 29];
+            var fixed: nio.FixedBufferStream([]const u8) = .init(sigcontent);
+            var skip = nio.SkipReader(void).from(&fixed, "\n ");
+            var b64r = nio.Base64Reader(void).from(&skip);
+            if (!std.mem.eql(u8, &try b64r.readArray(6), "SSHSIG")) return .unrecognized;
+            const sigversion = try b64r.readInt(u32, .big);
+            if (sigversion != 1) return .unrecognized;
+            const publickey = try b64r.readAlloc(allocator, try b64r.readInt(u32, .big));
+            const namespace = try b64r.readAlloc(allocator, try b64r.readInt(u32, .big));
+            const reserved = try b64r.readAlloc(allocator, try b64r.readInt(u32, .big));
+            const hash_algorithm = try b64r.readAlloc(allocator, try b64r.readInt(u32, .big));
+            const signature = try b64r.readAlloc(allocator, try b64r.readInt(u32, .big));
+            if (!std.mem.eql(u8, namespace, "git")) return .unrecognized;
+            if (reserved.len > 0) return .unrecognized;
+
+            var message = extras.ManyArrayList(u8).init(allocator);
+            defer message.deinit();
+            try message.appendSlice(try message.add(), content_plus_gpgsig);
+            message.lengths.items.len = 0;
+            {
+                var iter = std.mem.splitScalar(u8, content_plus_gpgsig, '\n');
+                while (iter.next()) |line| {
+                    try message.lengths.append(allocator, line.len + 1);
+                }
+                var skipping = false;
+                var i: usize = 0;
+                while (i < message.lengths.items.len) : (i += 1) {
+                    if (!skipping and std.mem.startsWith(u8, message.items(i), "gpgsig ")) {
+                        skipping = true;
+                        message.remove(i);
+                        i -= 1;
+                        continue;
+                    }
+                    if (!skipping) {
+                        continue;
+                    }
+                    if (skipping and std.mem.startsWith(u8, message.items(i), " ")) {
+                        message.remove(i);
+                        i -= 1;
+                        continue;
+                    }
+                    break;
+                }
+            }
+
+            var signed_data: nio.AllocatingWriter = .init(allocator);
+            defer signed_data.deinit();
+            try signed_data.writeAll("SSHSIG");
+            try signed_data.writeInt(u32, @intCast(namespace.len), .big);
+            try signed_data.writeAll(namespace);
+            try signed_data.writeInt(u32, @intCast(reserved.len), .big);
+            try signed_data.writeAll(reserved);
+            try signed_data.writeInt(u32, @intCast(hash_algorithm.len), .big);
+            try signed_data.writeAll(hash_algorithm);
+            if (std.mem.eql(u8, hash_algorithm, "sha256")) {
+                const H = std.crypto.hash.sha2.Sha256;
+                try signed_data.writeInt(u32, H.digest_length, .big);
+                try signed_data.writeAll(&extras.hashBytes(H, message.list.items));
+            }
+            if (std.mem.eql(u8, hash_algorithm, "sha512")) {
+                const H = std.crypto.hash.sha2.Sha512;
+                try signed_data.writeInt(u32, H.digest_length, .big);
+                try signed_data.writeAll(&extras.hashBytes(H, message.list.items));
+            }
+
+            var valid: ?bool = null;
+            var sigfixed: nio.FixedBufferStream([]const u8) = .init(signature);
+            const sigformat = try sigfixed.readAlloc(allocator, try sigfixed.readInt(u32, .big));
+            defer allocator.free(sigformat);
+            var pkfixed: nio.FixedBufferStream([]const u8) = .init(publickey);
+            const pkformat = try pkfixed.readAlloc(allocator, try pkfixed.readInt(u32, .big));
+            defer allocator.free(pkformat);
+
+            if (std.mem.eql(u8, sigformat, "ssh-rsa")) {
+                // intentionally skipped
+            }
+            if (std.mem.eql(u8, sigformat, "ssh-ed25519")) blk: {
+                const ed = std.crypto.sign.Ed25519;
+                const pk_len = pkfixed.readInt(u32, .big) catch break :blk;
+                if (pk_len != ed.PublicKey.encoded_length) break :blk;
+                const pk_bytes = pkfixed.readArray(ed.PublicKey.encoded_length) catch break :blk;
+                const pk = ed.PublicKey.fromBytes(pk_bytes) catch break :blk;
+                const sig_len = sigfixed.readInt(u32, .big) catch break :blk;
+                if (sig_len != ed.Signature.encoded_length) break :blk;
+                const sig_bytes = sigfixed.readArray(ed.Signature.encoded_length) catch break :blk;
+                const sig = ed.Signature.fromBytes(sig_bytes);
+                valid = if (sig.verifyStrict(signed_data.items, pk)) true else |_| false;
+            }
+            // ssh-dss (dsa)
+            // ecdsa-sha2-nistp256
+            // sk-ecdsa-sha2-nistp256@openssh.com
+            // ecdsa-sha2-nistp384
+            // ecdsa-sha2-nistp521
+            // sk-ssh-ed25519@openssh.com
+            // rsa-sha2-256
+            // rsa-sha2-512
+
+            return .{
+                .ssh = .{
+                    .publickey = publickey,
+                    .hash_algorithm = hash_algorithm,
+                    .signature = signature,
+                    .valid = valid,
+                },
+            };
+        }
+        return .unrecognized;
+    }
 };
 
 pub fn findFirstUnset(set: std.bit_set.DynamicBitSetUnmanaged, after: usize) ?usize {
