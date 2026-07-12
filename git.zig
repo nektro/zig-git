@@ -2153,7 +2153,12 @@ pub const Ref = struct {
 pub const Signature = union(enum) {
     none,
     unrecognized,
+    pgp: Pgp,
     ssh: Ssh,
+
+    pub const Pgp = struct {
+        valid: ?bool,
+    };
 
     pub const Ssh = struct {
         publickey: []const u8,
@@ -2168,6 +2173,18 @@ pub const Signature = union(enum) {
     pub fn from(allocator: std.mem.Allocator, pem_sig: []const u8, content_plus_gpgsig: []const u8) !Signature {
         if (pem_sig.len == 0) {
             return .none;
+        }
+        if (std.mem.startsWith(u8, pem_sig, "-----BEGIN PGP SIGNATURE-----\n \n ") and std.mem.endsWith(u8, pem_sig, "\n -----END PGP SIGNATURE-----\n ")) {
+            const pembody = pem_sig[33 .. std.mem.indexOf(u8, pem_sig, "\n =") orelse pem_sig.len - 31];
+            const sigcontent = pembody[0..std.mem.lastIndexOf(u8, pembody, "\n ").?];
+            var fixed: nio.FixedBufferStream([]const u8) = .init(sigcontent);
+            var skip = nio.SkipReader(void).from(&fixed, "\n ");
+            var b64r = nio.Base64Reader(void).from(&skip);
+            _ = &b64r;
+
+            return .{ .pgp = .{
+                .valid = null,
+            } };
         }
         if (std.mem.startsWith(u8, pem_sig, "-----BEGIN SSH SIGNATURE-----\n") and std.mem.endsWith(u8, pem_sig, "\n -----END SSH SIGNATURE-----")) {
             const sigcontent = pem_sig[30 .. pem_sig.len - 29];
@@ -2272,14 +2289,12 @@ pub const Signature = union(enum) {
             // rsa-sha2-256
             // rsa-sha2-512
 
-            return .{
-                .ssh = .{
-                    .publickey = publickey,
-                    .hash_algorithm = hash_algorithm,
-                    .signature = signature,
-                    .valid = valid,
-                },
-            };
+            return .{ .ssh = .{
+                .publickey = publickey,
+                .hash_algorithm = hash_algorithm,
+                .signature = signature,
+                .valid = valid,
+            } };
         }
         return .unrecognized;
     }
