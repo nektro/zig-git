@@ -207,16 +207,20 @@ fn parseCommitUserAndAt(input: string) !UserAndAt {
 }
 
 fn parseAt(time_part: string, tz_part: string) time.DateTime {
-    var at = time.DateTime.initUnix(extras.parseDigits(u64, time_part, 10) catch unreachable);
+    var at_s = extras.parseDigits(u64, time_part, 10) catch unreachable;
     std.debug.assert(tz_part.len == 5);
     std.debug.assert(tz_part[0] == '-' or tz_part[0] == '+');
     const sign: i8 = if (tz_part[0] == '+') 1 else -1;
     const hrs = extras.parseDigits(u7, tz_part[1..][0..2], 10) catch unreachable;
     const mins = extras.parseDigits(u7, tz_part[3..][0..2], 10) catch unreachable;
-    at.z_offset += hrs;
-    at.z_offset *= 4;
-    at.z_offset += mins / 15;
-    at.z_offset *= sign;
+    var z_offset: i8 = 0;
+    z_offset += hrs;
+    z_offset *= 4;
+    z_offset += mins / 15;
+    z_offset *= sign;
+    at_s = extras.safeAdd(at_s, @as(i32, z_offset) * 15 * time.s_per_min);
+    var at: time.DateTime = .initUnix(at_s);
+    at.z_offset = z_offset;
     return at;
 }
 
