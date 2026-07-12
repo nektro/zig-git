@@ -1265,10 +1265,13 @@ pub const Repository = struct {
         const content = try file.mmap();
         defer nfs.munmap(content);
         var iter = std.mem.splitScalar(u8, content, '\n');
+        var prev_line: []const u8 = "";
         while (iter.next()) |line| {
+            defer prev_line = line;
             if (line.len == 0) break;
             if (line[0] == '#') continue;
             if (line[0] == '^') {
+                if (!std.mem.startsWith(u8, prev_line[41..], "refs/" ++ kind ++ "/")) continue;
                 map.values()[map.count() - 1][1] = ensureObjId(CommitId, try arena.dupe(u8, line[1..])).id;
                 continue;
             }
