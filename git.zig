@@ -575,7 +575,6 @@ pub fn parseTag(tagfile: string) !Tag {
         .object = undefined,
         .type = undefined,
         .tagger = null,
-        .gpgsig = "",
         .message = undefined,
     };
     const object = extras.trimPrefixEnsure(iter.next().?, "object ").?;
@@ -585,27 +584,12 @@ pub fn parseTag(tagfile: string) !Tag {
     result.type = std.meta.stringToEnum(RefType, ty).?;
     const tag = extras.trimPrefixEnsure(iter.next().?, "tag ").?;
     _ = tag;
-    var f_start: usize = 0;
     while (true) {
-        const line_start = iter.index.?;
         const line = iter.next() orelse break;
         if (line.len == 0) break;
         const space = std.mem.indexOfScalar(u8, line, ' ').?;
         const k = line[0..space];
         if (std.mem.eql(u8, k, "tagger")) result.tagger = try parseCommitUserAndAt(line[space + 1 ..]);
-        if (std.mem.eql(u8, k, "gpgsig")) {
-            f_start = line_start + 7;
-            _ = iter.next().?;
-            while (true) {
-                const line2_start = iter.index.?;
-                const line2 = iter.next() orelse break;
-                if (line2.len == 0 or line2[0] != ' ') {
-                    iter.index = line2_start;
-                    break;
-                }
-            }
-            result.gpgsig = tagfile[f_start .. iter.index.? - 1];
-        }
     }
     result.message = iter.rest();
     return result;
@@ -2152,16 +2136,11 @@ pub const Tag = struct {
     object: Id,
     type: RefType,
     tagger: ?UserAndAt,
-    gpgsig: []const u8,
     message: string,
 
     pub fn destroy(t: *Tag, r: *Repository) void {
         r.gpa.free(t.raw);
         r.gpa.destroy(t);
-    }
-
-    pub fn signature(t: *const Tag, allocator: std.mem.Allocator) !Signature {
-        return .from(allocator, t.gpgsig, t.raw);
     }
 };
 
