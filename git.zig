@@ -2177,8 +2177,8 @@ pub const Signature = union(enum) {
         if (pem_sig.len == 0) {
             return .none;
         }
-        if (std.mem.startsWith(u8, pem_sig, "-----BEGIN PGP SIGNATURE-----\n \n ") and std.mem.endsWith(u8, pem_sig, "\n -----END PGP SIGNATURE-----\n ")) {
-            const pembody = pem_sig[33 .. std.mem.indexOf(u8, pem_sig, "\n =") orelse pem_sig.len - 31];
+        if (std.mem.startsWith(u8, pem_sig, "-----BEGIN PGP SIGNATURE-----\n \n ") and (std.mem.endsWith(u8, pem_sig, "\n -----END PGP SIGNATURE-----\n ") or std.mem.endsWith(u8, pem_sig, "\n -----END PGP SIGNATURE-----"))) {
+            const pembody = pem_sig[33 .. std.mem.indexOf(u8, pem_sig, "\n =") orelse std.mem.indexOf(u8, pem_sig, "\n -----END").?];
             const sigcontent = pembody[0..std.mem.lastIndexOf(u8, pembody, "\n ").?];
             var fixed: nio.FixedBufferStream([]const u8) = .init(sigcontent);
             var skip = nio.SkipReader(void).from(&fixed, "\n ");
