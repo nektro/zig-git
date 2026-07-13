@@ -2164,7 +2164,87 @@ pub const Signature = union(enum) {
     ssh: Ssh,
 
     pub const Pgp = struct {
+        packet_length: u32,
+        version: u8,
+        type_id: Pgp.Type,
+        pk_algorithm: Pgp.PublicKeyAlgorithm,
+        hash_algorithm: Pgp.HashAlgorithm,
+        signed_hash_value_prefix: [4]u8,
         valid: ?bool,
+
+        /// https://datatracker.ietf.org/doc/html/rfc9580#name-signature-types
+        pub const Type = enum(u8) {
+            binary = 0x00,
+            text = 0x01,
+            standalone = 0x02,
+            generic_certification = 0x10,
+            persona_certification = 0x11,
+            casual_certification = 0x12,
+            positive_certification = 0x13,
+            subkey_binding = 0x18,
+            primary_key_binding = 0x19,
+            direct_key = 0x1F,
+            key_revocation = 0x20,
+            subkey_revocation = 0x28,
+            certification_revocation = 0x30,
+            timestamp = 0x40,
+            third_party_confirmation = 0x50,
+            reserved = 0xFF,
+            _,
+
+            pub fn stringifyJson(e: Type, writer: anytype, options: std.json.Stringify.Options, json: type) !void {
+                return switch (e) {
+                    _ => json.stringify(writer, @intFromEnum(e), options),
+                    else => json.stringify(writer, @tagName(e), options),
+                };
+            }
+        };
+
+        /// https://datatracker.ietf.org/doc/html/rfc9580#name-public-key-algorithms
+        pub const PublicKeyAlgorithm = enum(u8) {
+            reserved = 0,
+            rsa_encrypt_or_sign = 1,
+            rsa_encrypt = 2,
+            rsa_sign = 3,
+            elgamal_encrypt = 16,
+            dsa = 17,
+            ecdh = 18,
+            ecdsa = 19,
+            x25519 = 25,
+            x448 = 26,
+            ed25519 = 27,
+            ed448 = 28,
+            _,
+
+            pub fn stringifyJson(e: PublicKeyAlgorithm, writer: anytype, options: std.json.Stringify.Options, json: type) !void {
+                return switch (e) {
+                    _ => json.stringify(writer, @intFromEnum(e), options),
+                    else => json.stringify(writer, @tagName(e), options),
+                };
+            }
+        };
+
+        /// https://datatracker.ietf.org/doc/html/rfc9580#name-hash-algorithms
+        pub const HashAlgorithm = enum(u8) {
+            reserved = 0,
+            md5 = 1,
+            sha1 = 2,
+            ripemd160 = 3,
+            sha2_256 = 8,
+            sha2_384 = 9,
+            sha2_512 = 10,
+            sha2_224 = 11,
+            sha3_256 = 12,
+            sha3_512 = 14,
+            _,
+
+            pub fn stringifyJson(e: HashAlgorithm, writer: anytype, options: std.json.Stringify.Options, json: type) !void {
+                return switch (e) {
+                    _ => json.stringify(writer, @intFromEnum(e), options),
+                    else => json.stringify(writer, @tagName(e), options),
+                };
+            }
+        };
     };
 
     pub const Ssh = struct {
@@ -2177,6 +2257,8 @@ pub const Signature = union(enum) {
     // https://www.ietf.org/archive/id/draft-josefsson-sshsig-format-03.html
     // https://datatracker.ietf.org/doc/html/rfc4251#section-5
     // https://pkg.go.dev/golang.org/x/crypto/ssh#pkg-constants
+    // https://datatracker.ietf.org/doc/html/rfc9580#section-4
+    // https://datatracker.ietf.org/doc/html/rfc9580#signature-packet
     pub fn from(allocator: std.mem.Allocator, pem_sig: []const u8, content_plus_gpgsig: []const u8) !Signature {
         if (pem_sig.len == 0) {
             return .none;
@@ -2187,9 +2269,51 @@ pub const Signature = union(enum) {
             var fixed: nio.FixedBufferStream([]const u8) = .init(sigcontent);
             var skip = nio.SkipReader(void).from(&fixed, "\n ");
             var b64r = nio.Base64Reader(void).from(&skip);
-            _ = &b64r;
+
+            const packet_type: packed struct { id: u6, format: u1, reserved: u1 } = @bitCast(try b64r.readByte());
+            if (packet_type.reserved != 1) return .unrecognized;
+            if (packet_type.format != 1) return .unrecognized; // legacy non-OpenPGP format
+            if (packet_type.id != 2) return .unrecognized; // not a signature
+
+            var packet_len_partial = false;
+            const packet_len: u32 = blk: {
+                const oct1: u32 = try b64r.readByte();
+                if (oct1 <= 191) break :blk oct1;
+                if (oct1 >= 224 and oct1 < 255) packet_len_partial = true;
+                if (oct1 >= 224 and oct1 < 255) break :blk @as(u32, 1) << @intCast(oct1 & 0x1F);
+                const oct2: u32 = try b64r.readByte();
+                if (oct1 <= 223) break :blk ((oct1 - 192) << 8) + (oct2) + 192;
+                const oct3: u32 = try b64r.readByte();
+                const oct4: u32 = try b64r.readByte();
+                const oct5: u32 = try b64r.readByte();
+                std.debug.assert(oct1 == 255);
+                break :blk (oct2 << 24) | (oct3 << 16) | (oct4 << 8) | oct5;
+            };
+
+            const sig_version = try b64r.readByte();
+            var type_id: Pgp.Type = .reserved;
+            var pk_algo: Pgp.PublicKeyAlgorithm = .reserved;
+            var hash_algo: Pgp.HashAlgorithm = .reserved;
+            var signed_hash_value_prefix: [2]u8 = @splat(0);
+
+            if (sig_version == 4) {
+                type_id = @enumFromInt(try b64r.readByte());
+                pk_algo = @enumFromInt(try b64r.readByte());
+                hash_algo = @enumFromInt(try b64r.readByte());
+                const subpacket_len_hashed = try b64r.readInt(u16, .big);
+                try b64r.skipBytes(subpacket_len_hashed, .{}); // TODO read this
+                const subpacket_len_unhashed = try b64r.readInt(u16, .big);
+                try b64r.skipBytes(subpacket_len_unhashed, .{}); // TODO read this
+                signed_hash_value_prefix = try b64r.readArray(2);
+            }
 
             return .{ .pgp = .{
+                .packet_length = packet_len,
+                .version = sig_version,
+                .type_id = type_id,
+                .pk_algorithm = pk_algo,
+                .hash_algorithm = hash_algo,
+                .signed_hash_value_prefix = extras.to_hex(signed_hash_value_prefix),
                 .valid = null,
             } };
         }

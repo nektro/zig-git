@@ -13,3 +13,4 @@ Inspect into the depths of your .git folder purely from Zig.
 - https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
 - https://git-scm.com/docs/gitformat-pack
 - https://awasu.com/weblog/git-guts/delta-objects/
+- https://git-scm.com/docs/gitformat-signature
