@@ -2167,9 +2167,12 @@ pub const Signature = union(enum) {
         packet_length: u32,
         version: u8,
         type_id: Pgp.Type,
-        pk_algorithm: Pgp.PublicKeyAlgorithm,
+        material: Material,
         hash_algorithm: Pgp.HashAlgorithm,
+        keyid: [16]u8,
+        creation_time: time.DateTime,
         signed_hash_value_prefix: [4]u8,
+        pubkey: ?PubKey,
         valid: ?bool,
 
         /// https://datatracker.ietf.org/doc/html/rfc9580#name-signature-types
@@ -2245,6 +2248,77 @@ pub const Signature = union(enum) {
                 };
             }
         };
+
+        pub const SubType = enum(u8) {
+            signature_creation_time = 2,
+            signature_expiration_time = 3,
+            exportable_certification = 4,
+            trust_signature = 5,
+            revocable_expression = 6,
+            revocable = 7,
+            key_expiration_time = 9,
+            preferred_v1_seipd_ciphers = 11,
+            issuer_key_id = 16,
+            notation_data = 20,
+            preferred_hash_algorithms = 21,
+            preferred_compression_algorithms = 22,
+            key_server_preferences = 23,
+            preferred_key_server = 24,
+            primary_user_id = 25,
+            policy_uri = 26,
+            key_flags = 27,
+            signer_user_id = 28,
+            revocation_reason = 29,
+            features = 30,
+            signature_target = 31,
+            embedded_signature = 32,
+            issuer_fingerprint = 33,
+            intended_recipient_fingerprint = 35,
+            preferred_aead_ciphersuites = 39,
+            _,
+        };
+
+        pub const Material = union(PublicKeyAlgorithm) {
+            reserved: void,
+            rsa_encrypt_or_sign: []const u8,
+            rsa_encrypt: void,
+            rsa_sign: void,
+            elgamal_encrypt: void,
+            dsa: void,
+            ecdh: void,
+            ecdsa: void,
+            x25519: void,
+            x448: void,
+            ed25519: void,
+            ed448: void,
+        };
+
+        const PubKey = struct {
+            version: u8,
+            creation_time: time.DateTime,
+            days_valid: u16,
+            material: PubKey.Material,
+
+            const Material = union(Pgp.PublicKeyAlgorithm) {
+                reserved: void,
+                rsa_encrypt_or_sign: RSA,
+                rsa_encrypt: void,
+                rsa_sign: void,
+                elgamal_encrypt: void,
+                dsa: void,
+                ecdh: void,
+                ecdsa: void,
+                x25519: void,
+                x448: void,
+                ed25519: void,
+                ed448: void,
+
+                const RSA = struct {
+                    n: []const u8,
+                    e: []const u8,
+                };
+            };
+        };
     };
 
     pub const Ssh = struct {
@@ -2264,57 +2338,159 @@ pub const Signature = union(enum) {
             return .none;
         }
         if (std.mem.startsWith(u8, pem_sig, "-----BEGIN PGP SIGNATURE-----\n \n ") and (std.mem.endsWith(u8, pem_sig, "\n -----END PGP SIGNATURE-----\n ") or std.mem.endsWith(u8, pem_sig, "\n -----END PGP SIGNATURE-----"))) {
-            const pembody = pem_sig[33 .. std.mem.indexOf(u8, pem_sig, "\n =") orelse std.mem.indexOf(u8, pem_sig, "\n -----END").?];
+            const pembody = pem_sig[33..std.mem.indexOf(u8, pem_sig, "\n -----END").?];
             const sigcontent = pembody[0..std.mem.lastIndexOf(u8, pembody, "\n ").?];
             var fixed: nio.FixedBufferStream([]const u8) = .init(sigcontent);
             var skip = nio.SkipReader(void).from(&fixed, "\n ");
             var b64r = nio.Base64Reader(void).from(&skip);
+
+            var message = extras.ManyArrayList(u8).init(allocator);
+            defer message.deinit();
+            try message.appendSlice(try message.add(), content_plus_gpgsig);
+            message.lengths.items.len = 0;
+            {
+                var iter = std.mem.splitScalar(u8, content_plus_gpgsig, '\n');
+                while (iter.next()) |line| {
+                    try message.lengths.append(allocator, line.len + 1);
+                }
+                var skipping = false;
+                var i: usize = 0;
+                while (i < message.lengths.items.len) : (i += 1) {
+                    if (!skipping and std.mem.startsWith(u8, message.items(i), "gpgsig ")) {
+                        skipping = true;
+                        message.remove(i);
+                        i -= 1;
+                        continue;
+                    }
+                    if (!skipping) {
+                        continue;
+                    }
+                    if (skipping and std.mem.startsWith(u8, message.items(i), " ")) {
+                        message.remove(i);
+                        i -= 1;
+                        continue;
+                    }
+                    break;
+                }
+            }
+
+            var signed_data: nio.AllocatingWriter = .init(allocator);
+            defer signed_data.deinit();
+            try signed_data.writeAll(message.list.items);
 
             const packet_type: packed struct { id: u6, format: u1, reserved: u1 } = @bitCast(try b64r.readByte());
             if (packet_type.reserved != 1) return .unrecognized;
             if (packet_type.format != 1) return .unrecognized; // legacy non-OpenPGP format
             if (packet_type.id != 2) return .unrecognized; // not a signature
 
-            var packet_len_partial = false;
-            const packet_len: u32 = blk: {
-                const oct1: u32 = try b64r.readByte();
-                if (oct1 <= 191) break :blk oct1;
-                if (oct1 >= 224 and oct1 < 255) packet_len_partial = true;
-                if (oct1 >= 224 and oct1 < 255) break :blk @as(u32, 1) << @intCast(oct1 & 0x1F);
-                const oct2: u32 = try b64r.readByte();
-                if (oct1 <= 223) break :blk ((oct1 - 192) << 8) + (oct2) + 192;
-                const oct3: u32 = try b64r.readByte();
-                const oct4: u32 = try b64r.readByte();
-                const oct5: u32 = try b64r.readByte();
-                std.debug.assert(oct1 == 255);
-                break :blk (oct2 << 24) | (oct3 << 16) | (oct4 << 8) | oct5;
-            };
+            _, const packet_len = pgp_read_packet_len(&b64r) catch return .unrecognized;
 
             const sig_version = try b64r.readByte();
+            try signed_data.writeAll(&.{sig_version});
             var type_id: Pgp.Type = .reserved;
             var pk_algo: Pgp.PublicKeyAlgorithm = .reserved;
             var hash_algo: Pgp.HashAlgorithm = .reserved;
+            var creation_time: [4]u8 = @splat(0);
+            var keyid: [8]u8 = @splat(0);
             var signed_hash_value_prefix: [2]u8 = @splat(0);
 
+            if (sig_version == 3) blk: {
+                const hashed_len = try b64r.readByte();
+                if (hashed_len != 5) break :blk;
+                type_id = @enumFromInt(try b64r.readByte());
+                creation_time = try b64r.readArray(4);
+                keyid = try b64r.readArray(8);
+                pk_algo = @enumFromInt(try b64r.readByte());
+                hash_algo = @enumFromInt(try b64r.readByte());
+                signed_hash_value_prefix = try b64r.readArray(2);
+            }
             if (sig_version == 4) {
                 type_id = @enumFromInt(try b64r.readByte());
                 pk_algo = @enumFromInt(try b64r.readByte());
                 hash_algo = @enumFromInt(try b64r.readByte());
+                try signed_data.writeAll(&.{ @intFromEnum(type_id), @intFromEnum(pk_algo), @intFromEnum(hash_algo) });
                 const subpacket_len_hashed = try b64r.readInt(u16, .big);
-                try b64r.skipBytes(subpacket_len_hashed, .{}); // TODO read this
+                try signed_data.writeInt(u16, subpacket_len_hashed, .big);
+                const subpacket_bytes = try b64r.readAlloc(allocator, subpacket_len_hashed);
+                try signed_data.writeAll(subpacket_bytes);
+                try signed_data.writeAll(&.{0x04});
+                try signed_data.writeAll(&.{0xFF});
+                try signed_data.writeInt(u32, @truncate(signed_data.items.len - 2 - message.list.items.len), .big);
+                {
+                    var lr = nio.FixedBufferStream([]u8).init(subpacket_bytes);
+                    while (lr.rest().len > 0) {
+                        const subpacket_len = try pgp_read_subpacket_len(&lr);
+                        const subpacket_typeid: Pgp.SubType = @enumFromInt(try lr.readByte() & 127);
+                        if (subpacket_typeid == .signature_creation_time and subpacket_len == 1 + 4) {
+                            creation_time = try lr.readArray(4);
+                            continue;
+                        }
+                        if (subpacket_typeid == .issuer_key_id and subpacket_len == 1 + 8) {
+                            keyid = try lr.readArray(8);
+                            continue;
+                        }
+                        try lr.skipBytes(subpacket_len - 1, .{});
+                    }
+                }
                 const subpacket_len_unhashed = try b64r.readInt(u16, .big);
-                try b64r.skipBytes(subpacket_len_unhashed, .{}); // TODO read this
+                {
+                    try b64r.skipBytes(subpacket_len_unhashed, .{}); // TODO read this
+                }
                 signed_hash_value_prefix = try b64r.readArray(2);
+            }
+            if (sig_version == 6) {
+                type_id = @enumFromInt(try b64r.readByte());
+                pk_algo = @enumFromInt(try b64r.readByte());
+                hash_algo = @enumFromInt(try b64r.readByte());
+                const subpacket_len_hashed = try b64r.readInt(u32, .big);
+                {
+                    try b64r.skipBytes(subpacket_len_hashed, .{}); // TODO read this
+                }
+                const subpacket_len_unhashed = try b64r.readInt(u32, .big);
+                {
+                    try b64r.skipBytes(subpacket_len_unhashed, .{}); // TODO read this
+                }
+                signed_hash_value_prefix = try b64r.readArray(2);
+            }
+
+            const material = try pgp_read_signature_material(&b64r, allocator, pk_algo);
+
+            var valid: ?bool = null;
+            _ = &valid;
+            var pubkey_t: ?Pgp.PubKey = null;
+
+            // PGP keys are not stored in-band, need to fetch them and cache them
+            // TODO check https://keys.openpgp.org
+            // TODO check https://keyserver.ubuntu.com
+            // TODO check manually uploaded keys in database
+            if (known_pgp_keys.get(&extras.to_HEX(keyid))) |pubkey_bytes| blk: {
+                const ns = std.crypto.Certificate.rsa;
+                var pubkey_fbs: nio.FixedBufferStream([]const u8) = .init(pubkey_bytes);
+                pubkey_t = pgp_parse_pubkey(&pubkey_fbs, allocator) catch break :blk;
+                if (pubkey_t.?.material != pk_algo) {
+                    valid = false;
+                    break :blk;
+                }
+                switch (pubkey_t.?.material) {
+                    .rsa_encrypt_or_sign => |*m| {
+                        const pubkey = ns.PublicKey.fromBytes(m.e, m.n) catch break :blk;
+                        valid = if (pgp_rsa_verify(m.n.len, material.rsa_encrypt_or_sign, signed_data.items, pubkey, hash_algo)) true else |err| if (err == error.unrecognized) null else false;
+                    },
+                    else => {},
+                }
             }
 
             return .{ .pgp = .{
                 .packet_length = packet_len,
                 .version = sig_version,
                 .type_id = type_id,
-                .pk_algorithm = pk_algo,
+                .material = material,
                 .hash_algorithm = hash_algo,
+                .keyid = extras.to_HEX(keyid),
+                .creation_time = .initUnix(std.mem.readInt(u32, &creation_time, .big)),
                 .signed_hash_value_prefix = extras.to_hex(signed_hash_value_prefix),
-                .valid = null,
+                .pubkey = pubkey_t,
+                .valid = valid,
             } };
         }
         if (std.mem.startsWith(u8, pem_sig, "-----BEGIN SSH SIGNATURE-----\n") and std.mem.endsWith(u8, pem_sig, "\n -----END SSH SIGNATURE-----")) {
@@ -2429,6 +2605,126 @@ pub const Signature = union(enum) {
         }
         return .unrecognized;
     }
+
+    fn pgp_read_packet_len(r: anytype) !struct { bool, u32 } {
+        const oct1: u32 = try r.readByte();
+        if (oct1 <= 191) return .{ false, oct1 };
+        if (oct1 >= 224 and oct1 < 255) return .{ true, @as(u32, 1) << @intCast(oct1 & 0x1F) };
+        const oct2: u32 = try r.readByte();
+        if (oct1 <= 223) return .{ false, ((oct1 - 192) << 8) + (oct2) + 192 };
+        const oct3: u32 = try r.readByte();
+        const oct4: u32 = try r.readByte();
+        const oct5: u32 = try r.readByte();
+        std.debug.assert(oct1 == 255);
+        return .{ false, (oct2 << 24) | (oct3 << 16) | (oct4 << 8) | oct5 };
+    }
+
+    fn pgp_read_subpacket_len(r: anytype) !u32 {
+        const oct1: u32 = try r.readByte();
+        if (oct1 < 192) return oct1;
+        const oct2: u32 = try r.readByte();
+        if (oct1 < 255) return ((oct1 - 192) << 8) + (oct2) + 192;
+        const oct3: u32 = try r.readByte();
+        const oct4: u32 = try r.readByte();
+        const oct5: u32 = try r.readByte();
+        return (oct2 << 24) | (oct3 << 16) | (oct4 << 8) | oct5;
+    }
+
+    fn pgp_parse_pubkey(r: anytype, allocator: std.mem.Allocator) !Pgp.PubKey {
+        const packet_type: packed struct { id: u6, format: u1, reserved: u1 } = @bitCast(try r.readByte());
+        if (packet_type.reserved != 1) return error.unrecognized;
+        if (packet_type.format != 1) return error.unrecognized; // legacy non-OpenPGP format
+        if (packet_type.id != 6) return error.unrecognized; // not a public key
+        _, const packet_len = pgp_read_packet_len(r) catch return error.unrecognized;
+        var lr = nio.LimitedReader(void).from(r, packet_len);
+        const key_version = try lr.readByte();
+        if (key_version == 3) {
+            // TODO
+        }
+        if (key_version == 4) {
+            const creation_time = try lr.readArray(4);
+            const pk_algo: Pgp.PublicKeyAlgorithm = @enumFromInt(try lr.readByte());
+            const material = try pgp_parse_pubkey_material(r, allocator, pk_algo);
+            return .{
+                .version = key_version,
+                .creation_time = .initUnix(std.mem.readInt(u32, &creation_time, .big)),
+                .days_valid = 0,
+                .material = material,
+            };
+        }
+        if (key_version == 6) {
+            // TODO
+        }
+        return .{
+            .version = key_version,
+            .creation_time = .initUnix(0),
+            .days_valid = 0,
+            .material = .reserved,
+        };
+    }
+
+    fn pgp_parse_pubkey_material(r: anytype, allocator: std.mem.Allocator, pk_algo: Pgp.PublicKeyAlgorithm) !Pgp.PubKey.Material {
+        switch (pk_algo) {
+            .rsa_encrypt_or_sign => {
+                const n_len = try r.readInt(u16, .big);
+                const n = try r.readAlloc(allocator, (n_len + 7) / 8);
+                const e_len = try r.readInt(u16, .big);
+                const e = try r.readAlloc(allocator, (e_len + 7) / 8);
+                return .{ .rsa_encrypt_or_sign = .{ .n = n, .e = e } };
+            },
+            inline else => |t| return @unionInit(Pgp.PubKey.Material, @tagName(t), {}),
+            _ => return .reserved,
+        }
+    }
+
+    fn pgp_read_signature_material(r: anytype, allocator: std.mem.Allocator, pk_algo: Pgp.PublicKeyAlgorithm) !Pgp.Material {
+        switch (pk_algo) {
+            .rsa_encrypt_or_sign => {
+                const len = try r.readInt(u16, .big);
+                const bytes = try r.readAlloc(allocator, (len + 7) / 8);
+                return .{ .rsa_encrypt_or_sign = bytes };
+            },
+            inline else => |t| return @unionInit(Pgp.Material, @tagName(t), {}),
+            _ => return .reserved,
+        }
+    }
+
+    // https://datatracker.ietf.org/doc/html/rfc9580#name-rsa
+    // An implementation SHOULD NOT encrypt, sign, or verify using RSA keys of a size less than 3072 bits.
+    // An implementation that decrypts a message using an RSA secret key of a size less than 3072 bits SHOULD generate a deprecation warning that the key is too weak for modern use.
+    fn pgp_rsa_verify(modulus_len_r: usize, sig: []const u8, message: []const u8, pubkey: std.crypto.Certificate.rsa.PublicKey, hash_algorithm: Pgp.HashAlgorithm) !void {
+        return switch (modulus_len_r) {
+            inline 384, 512 => |modulus_len| pgp_rsa_verify_inner(modulus_len, sig, message, pubkey, hash_algorithm),
+            else => error.unrecognized,
+        };
+    }
+
+    fn pgp_rsa_verify_inner(comptime modulus_len: usize, sig: []const u8, message: []const u8, pubkey: std.crypto.Certificate.rsa.PublicKey, hash_algorithm: Pgp.HashAlgorithm) !void {
+        const ns = std.crypto.Certificate.rsa;
+        const signature = ns.PKCS1v1_5Signature.fromBytes(modulus_len, sig);
+        return switch (hash_algorithm) {
+            .reserved => error.unrecognized,
+            .md5 => error.unrecognized, //ns.PKCS1v1_5Signature.verify(modulus_len, signature, message, pubkey, std.crypto.hash.Md5),
+            .sha1 => ns.PKCS1v1_5Signature.verify(modulus_len, signature, message, pubkey, std.crypto.hash.Sha1),
+            .ripemd160 => error.unrecognized,
+            .sha2_224 => ns.PKCS1v1_5Signature.verify(modulus_len, signature, message, pubkey, std.crypto.hash.sha2.Sha224),
+            .sha2_256 => ns.PKCS1v1_5Signature.verify(modulus_len, signature, message, pubkey, std.crypto.hash.sha2.Sha256),
+            .sha2_384 => ns.PKCS1v1_5Signature.verify(modulus_len, signature, message, pubkey, std.crypto.hash.sha2.Sha384),
+            .sha2_512 => ns.PKCS1v1_5Signature.verify(modulus_len, signature, message, pubkey, std.crypto.hash.sha2.Sha512),
+            .sha3_256 => error.unrecognized, //ns.PKCS1v1_5Signature.verify(modulus_len, signature, message, pubkey, std.crypto.hash.sha3.Sha3_256),
+            .sha3_512 => error.unrecognized, //ns.PKCS1v1_5Signature.verify(modulus_len, signature, message, pubkey, std.crypto.hash.sha3.Sha3_512),
+            _ => error.unrecognized,
+        };
+    }
+
+    // curl https://keys.openpgp.org/vks/v1/by-keyid/<KEYID> | head -n -2 | tail +4 | tr -d '\n' | base64 -d | xxd -p
+    pub const known_pgp_keys: std.StaticStringMap([]const u8) = blk: {
+        @setEvalBranchQuota(std.math.maxInt(u32));
+        break :blk .initComptime(.{
+            // GitHub <noreply@github.com>
+            .{ "B5690EEEBB952194", &extras.from_hex("c6c14d0465a6c576011000b237ee2f88540ce904282abd00d96d2b19d3286d3270399b28d903e97b06f206cb8bdeb356e4e987ad6c170213ca36a508c8ecddabc3284b1a134eea8b92ca1a862c442ff5f69f284e07147d1a4633fe823d4779d870b45a150a1226855f3adeb5a2990b5336d601e8696e04fc10a967f09b0436ad3ed270e55908b487643da069aa960573b24c26559f0b7b2bf8320ee137ab30c99ee6a197e49290f9f94ed9d9756eac2ce44927e0e336f694c44b268b3678201cef8f440ac5f4b7b3817ed17e62a8232178b15ec9b646b52abd4e3b3a43ad65e021bc061e9db0b7a6bf4585ae4dc6805411afb5d4c2bd5ba39c461c2fc55094acc511e854d26720bffd5a574d3b6b4653aaa54e7018c6cfdf3a67f607aa3970a5f2b17bfb58003c6fe8f901504c1b1512bbb08b8256a20890b90c8ec0022515effb76f6b15991a9bffc96dbe2f782e2fbc5a1ca1551ac6b28658ad410e576be3f589280a4970f245e09b5a8b5fa807a6a4fc92236e4b1e1dd271723a3607474ab481685a23c007e0c5b3d3110e9a748b0a1c24287eb9cbacd6b750e7860c688e38ad1a615de38840c6028b9ab6435fdaaf39128b23d5ff65682a801f760b243edd7129ded620a12b9a914c1c8cbc8c9e483d0d6cd9d5305386a57c92c96b4a6f695da6ef00581409b09b3d166601716006040da9a7e2316829faac120722c51515137c39564ab04b01916cb0011010001") },
+        });
+    };
 };
 
 pub fn findFirstUnset(set: std.bit_set.DynamicBitSetUnmanaged, after: usize) ?usize {
