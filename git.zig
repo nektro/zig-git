@@ -2128,7 +2128,10 @@ pub const Commit = struct {
     }
 
     pub fn signature(t: *const Commit, allocator: std.mem.Allocator) !Signature {
-        return .from(allocator, t.gpgsig, t.raw);
+        return Signature.fromHeader(allocator, t.gpgsig, t.raw) catch |err| switch (err) {
+            error.OutOfMemory => |e| e,
+            error.EndOfStream, error.InvalidCharacter => .unrecognized,
+        };
     }
 };
 
@@ -2328,62 +2331,78 @@ pub const Signature = union(enum) {
         valid: ?bool,
     };
 
-    // https://www.ietf.org/archive/id/draft-josefsson-sshsig-format-03.html
-    // https://datatracker.ietf.org/doc/html/rfc4251#section-5
-    // https://pkg.go.dev/golang.org/x/crypto/ssh#pkg-constants
-    // https://datatracker.ietf.org/doc/html/rfc9580#section-4
-    // https://datatracker.ietf.org/doc/html/rfc9580#signature-packet
-    pub fn from(allocator: std.mem.Allocator, pem_sig: []const u8, content_plus_gpgsig: []const u8) !Signature {
+    pub fn fromHeader(allocator: std.mem.Allocator, pem_sig: []const u8, content_plus_gpgsig: []const u8) !Signature {
         if (pem_sig.len == 0) {
             return .none;
         }
+
+        var message = extras.ManyArrayList(u8).init(allocator);
+        defer message.deinit();
+        try message.appendSlice(try message.add(), content_plus_gpgsig);
+        message.lengths.items.len = 0;
+        {
+            var iter = std.mem.splitScalar(u8, content_plus_gpgsig, '\n');
+            while (iter.next()) |line| {
+                try message.lengths.append(allocator, line.len + 1);
+            }
+            var skipping = false;
+            var i: usize = 0;
+            while (i < message.lengths.items.len) : (i += 1) {
+                if (!skipping and std.mem.startsWith(u8, message.items(i), "gpgsig ")) {
+                    skipping = true;
+                    message.remove(i);
+                    i -= 1;
+                    continue;
+                }
+                if (!skipping) {
+                    continue;
+                }
+                if (skipping and std.mem.startsWith(u8, message.items(i), " ")) {
+                    message.remove(i);
+                    i -= 1;
+                    continue;
+                }
+                break;
+            }
+        }
+
         if (std.mem.startsWith(u8, pem_sig, "-----BEGIN PGP SIGNATURE-----\n \n ") and (std.mem.endsWith(u8, pem_sig, "\n -----END PGP SIGNATURE-----\n ") or std.mem.endsWith(u8, pem_sig, "\n -----END PGP SIGNATURE-----"))) {
             const pembody = pem_sig[33..std.mem.indexOf(u8, pem_sig, "\n -----END").?];
             const sigcontent = pembody[0..std.mem.lastIndexOf(u8, pembody, "\n ").?];
             var fixed: nio.FixedBufferStream([]const u8) = .init(sigcontent);
             var skip = nio.SkipReader(void).from(&fixed, "\n ");
             var b64r = nio.Base64Reader(void).from(&skip);
+            return fromReader(.pgp, allocator, &b64r, message.list.items);
+        }
 
-            var message = extras.ManyArrayList(u8).init(allocator);
-            defer message.deinit();
-            try message.appendSlice(try message.add(), content_plus_gpgsig);
-            message.lengths.items.len = 0;
-            {
-                var iter = std.mem.splitScalar(u8, content_plus_gpgsig, '\n');
-                while (iter.next()) |line| {
-                    try message.lengths.append(allocator, line.len + 1);
-                }
-                var skipping = false;
-                var i: usize = 0;
-                while (i < message.lengths.items.len) : (i += 1) {
-                    if (!skipping and std.mem.startsWith(u8, message.items(i), "gpgsig ")) {
-                        skipping = true;
-                        message.remove(i);
-                        i -= 1;
-                        continue;
-                    }
-                    if (!skipping) {
-                        continue;
-                    }
-                    if (skipping and std.mem.startsWith(u8, message.items(i), " ")) {
-                        message.remove(i);
-                        i -= 1;
-                        continue;
-                    }
-                    break;
-                }
-            }
+        if (std.mem.startsWith(u8, pem_sig, "-----BEGIN SSH SIGNATURE-----\n") and std.mem.endsWith(u8, pem_sig, "\n -----END SSH SIGNATURE-----")) {
+            const sigcontent = pem_sig[30 .. pem_sig.len - 29];
+            var fixed: nio.FixedBufferStream([]const u8) = .init(sigcontent);
+            var skip = nio.SkipReader(void).from(&fixed, "\n ");
+            var b64r = nio.Base64Reader(void).from(&skip);
+            return fromReader(.ssh, allocator, &b64r, message.list.items);
+        }
 
+        return .unrecognized;
+    }
+
+    // https://www.ietf.org/archive/id/draft-josefsson-sshsig-format-03.html
+    // https://datatracker.ietf.org/doc/html/rfc4251#section-5
+    // https://pkg.go.dev/golang.org/x/crypto/ssh#pkg-constants
+    // https://datatracker.ietf.org/doc/html/rfc9580#section-4
+    // https://datatracker.ietf.org/doc/html/rfc9580#signature-packet
+    pub fn fromReader(kind: NonVoidUnionFieldEnum(Signature), allocator: std.mem.Allocator, b64r: anytype, message: []const u8) !Signature {
+        if (kind == .pgp) {
             var signed_data: nio.AllocatingWriter = .init(allocator);
             defer signed_data.deinit();
-            try signed_data.writeAll(message.list.items);
+            try signed_data.writeAll(message);
 
             const packet_type: packed struct { id: u6, format: u1, reserved: u1 } = @bitCast(try b64r.readByte());
             if (packet_type.reserved != 1) return .unrecognized;
             if (packet_type.format != 1) return .unrecognized; // legacy non-OpenPGP format
             if (packet_type.id != 2) return .unrecognized; // not a signature
 
-            _, const packet_len = pgp_read_packet_len(&b64r) catch return .unrecognized;
+            _, const packet_len = pgp_read_packet_len(b64r) catch return .unrecognized;
 
             const sig_version = try b64r.readByte();
             try signed_data.writeAll(&.{sig_version});
@@ -2415,7 +2434,7 @@ pub const Signature = union(enum) {
                 try signed_data.writeAll(subpacket_bytes);
                 try signed_data.writeAll(&.{0x04});
                 try signed_data.writeAll(&.{0xFF});
-                try signed_data.writeInt(u32, @truncate(signed_data.items.len - 2 - message.list.items.len), .big);
+                try signed_data.writeInt(u32, @truncate(signed_data.items.len - 2 - message.len), .big);
                 {
                     var lr = nio.FixedBufferStream([]u8).init(subpacket_bytes);
                     while (lr.rest().len > 0) {
@@ -2453,7 +2472,7 @@ pub const Signature = union(enum) {
                 signed_hash_value_prefix = try b64r.readArray(2);
             }
 
-            const material = try pgp_read_signature_material(&b64r, allocator, pk_algo);
+            const material = try pgp_read_signature_material(b64r, allocator, pk_algo);
 
             var valid: ?bool = null;
             _ = &valid;
@@ -2493,11 +2512,8 @@ pub const Signature = union(enum) {
                 .valid = valid,
             } };
         }
-        if (std.mem.startsWith(u8, pem_sig, "-----BEGIN SSH SIGNATURE-----\n") and std.mem.endsWith(u8, pem_sig, "\n -----END SSH SIGNATURE-----")) {
-            const sigcontent = pem_sig[30 .. pem_sig.len - 29];
-            var fixed: nio.FixedBufferStream([]const u8) = .init(sigcontent);
-            var skip = nio.SkipReader(void).from(&fixed, "\n ");
-            var b64r = nio.Base64Reader(void).from(&skip);
+
+        if (kind == .ssh) {
             if (!std.mem.eql(u8, &try b64r.readArray(6), "SSHSIG")) return .unrecognized;
             const sigversion = try b64r.readInt(u32, .big);
             if (sigversion != 1) return .unrecognized;
@@ -2514,36 +2530,6 @@ pub const Signature = union(enum) {
             if (!std.mem.eql(u8, namespace, "git")) return .unrecognized;
             if (reserved.len > 0) return .unrecognized;
 
-            var message = extras.ManyArrayList(u8).init(allocator);
-            defer message.deinit();
-            try message.appendSlice(try message.add(), content_plus_gpgsig);
-            message.lengths.items.len = 0;
-            {
-                var iter = std.mem.splitScalar(u8, content_plus_gpgsig, '\n');
-                while (iter.next()) |line| {
-                    try message.lengths.append(allocator, line.len + 1);
-                }
-                var skipping = false;
-                var i: usize = 0;
-                while (i < message.lengths.items.len) : (i += 1) {
-                    if (!skipping and std.mem.startsWith(u8, message.items(i), "gpgsig ")) {
-                        skipping = true;
-                        message.remove(i);
-                        i -= 1;
-                        continue;
-                    }
-                    if (!skipping) {
-                        continue;
-                    }
-                    if (skipping and std.mem.startsWith(u8, message.items(i), " ")) {
-                        message.remove(i);
-                        i -= 1;
-                        continue;
-                    }
-                    break;
-                }
-            }
-
             var signed_data: nio.AllocatingWriter = .init(allocator);
             defer signed_data.deinit();
             try signed_data.writeAll("SSHSIG");
@@ -2556,12 +2542,12 @@ pub const Signature = union(enum) {
             if (std.mem.eql(u8, hash_algorithm, "sha256")) {
                 const H = std.crypto.hash.sha2.Sha256;
                 try signed_data.writeInt(u32, H.digest_length, .big);
-                try signed_data.writeAll(&extras.hashBytes(H, message.list.items));
+                try signed_data.writeAll(&extras.hashBytes(H, message));
             }
             if (std.mem.eql(u8, hash_algorithm, "sha512")) {
                 const H = std.crypto.hash.sha2.Sha512;
                 try signed_data.writeInt(u32, H.digest_length, .big);
-                try signed_data.writeAll(&extras.hashBytes(H, message.list.items));
+                try signed_data.writeAll(&extras.hashBytes(H, message));
             }
 
             var valid: ?bool = null;
@@ -2602,6 +2588,11 @@ pub const Signature = union(enum) {
                 .signature = signature,
                 .valid = valid,
             } };
+        }
+
+        switch (kind) {
+            .pgp => {}, //above
+            .ssh => {}, //above
         }
         return .unrecognized;
     }
@@ -2780,4 +2771,17 @@ pub fn idFor(r: *Repository, tree: *Tree, sub_path: []const u8) !?struct { *cons
             return .{ obj, tree };
         },
     }
+}
+
+fn NonVoidUnionFieldEnum(U: type) type {
+    const info = @typeInfo(U).@"union";
+    var names: [info.fields.len][:0]const u8 = @splat("");
+    var count: usize = 0;
+    for (info.fields) |f| {
+        if (f.type == void) continue;
+        names[count] = f.name;
+        count += 1;
+    }
+    const T = std.math.IntFittingRange(0, count - 1);
+    return @Enum(T, .exhaustive, names[0..count], &std.simd.iota(T, count));
 }
