@@ -2391,6 +2391,7 @@ pub const Signature = union(enum) {
     // https://pkg.go.dev/golang.org/x/crypto/ssh#pkg-constants
     // https://datatracker.ietf.org/doc/html/rfc9580#section-4
     // https://datatracker.ietf.org/doc/html/rfc9580#signature-packet
+    // https://datatracker.ietf.org/doc/html/rfc5656
     pub fn fromReader(kind: NonVoidUnionFieldEnum(Signature), allocator: std.mem.Allocator, b64r: anytype, message: []const u8) !Signature {
         if (kind == .pgp) {
             var signed_data: nio.AllocatingWriter = .init(allocator);
@@ -2552,11 +2553,10 @@ pub const Signature = union(enum) {
 
             var valid: ?bool = null;
             var sigfixed: nio.FixedBufferStream([]const u8) = .init(signature);
-            const sigformat = try sigfixed.readAlloc(allocator, try sigfixed.readInt(u32, .big));
-            defer allocator.free(sigformat);
+            const sigformat = try sigfixed.readSlice(try sigfixed.readInt(u32, .big));
             var pkfixed: nio.FixedBufferStream([]const u8) = .init(publickey);
-            const pkformat = try pkfixed.readAlloc(allocator, try pkfixed.readInt(u32, .big));
-            defer allocator.free(pkformat);
+            const pkformat = try pkfixed.readSlice(try pkfixed.readInt(u32, .big));
+            _ = pkformat;
 
             if (std.mem.eql(u8, sigformat, "ssh-rsa")) {
                 // intentionally skipped
@@ -2573,8 +2573,30 @@ pub const Signature = union(enum) {
                 const sig = ed.Signature.fromBytes(sig_bytes);
                 valid = if (sig.verifyStrict(signed_data.items, pk)) true else |_| false;
             }
+            if (std.mem.eql(u8, sigformat, "ecdsa-sha2-nistp256")) blk: {
+                const C = std.crypto.ecc.P256;
+                const H = std.crypto.hash.sha2.Sha256;
+                const ns = std.crypto.sign.ecdsa.Ecdsa(C, H);
+                const ident_len = pkfixed.readInt(u32, .big) catch break :blk;
+                if (ident_len != "nistp256".len) break :blk;
+                if (!(pkfixed.readExpected("nistp256") catch break :blk)) break :blk;
+                const q_len = pkfixed.readInt(u32, .big) catch break :blk;
+                const q = pkfixed.readSlice(q_len) catch break :blk;
+                const pk = ns.PublicKey.fromSec1(q) catch break :blk;
+                const sigblob_len = sigfixed.readInt(u32, .big) catch break :blk;
+                _ = sigblob_len;
+                const r_len = sigfixed.readInt(u32, .big) catch break :blk;
+                var r = sigfixed.readSlice(r_len) catch break :blk;
+                if (r[0] == 0) r = r[1..];
+                if (r.len != C.scalar.encoded_length) break :blk;
+                const s_len = sigfixed.readInt(u32, .big) catch break :blk;
+                var s = sigfixed.readSlice(s_len) catch break :blk;
+                if (s[0] == 0) s = s[1..];
+                if (s.len != C.scalar.encoded_length) break :blk;
+                const sig = ns.Signature.fromBytes((r[0..C.scalar.encoded_length] ++ s[0..C.scalar.encoded_length]).*);
+                valid = if (sig.verify(signed_data.items, pk)) true else |_| false;
+            }
             // ssh-dss (dsa)
-            // ecdsa-sha2-nistp256
             // sk-ecdsa-sha2-nistp256@openssh.com
             // ecdsa-sha2-nistp384
             // ecdsa-sha2-nistp521
