@@ -2562,6 +2562,19 @@ pub const Signature = union(enum) {
             if (std.mem.eql(u8, sigformat, "ssh-rsa")) {
                 // intentionally skipped, rsa with sha1
             }
+            if (std.mem.eql(u8, sigformat, "rsa-sha2-256")) blk: {
+                const ns = std.crypto.Certificate.rsa;
+                const pk_e_len = pkfixed.readInt(u32, .big) catch break :blk;
+                var pk_e = pkfixed.readSlice(pk_e_len) catch break :blk;
+                if (pk_e[0] == 0) pk_e = pk_e[1..];
+                const pk_n_len = pkfixed.readInt(u32, .big) catch break :blk;
+                var pk_n = pkfixed.readSlice(pk_n_len) catch break :blk;
+                if (pk_n[0] == 0) pk_n = pk_n[1..];
+                const pk = ns.PublicKey.fromBytes(pk_e, pk_n) catch break :blk;
+                const sig_len = sigfixed.readInt(u32, .big) catch break :blk;
+                const sig = sigfixed.readSlice(sig_len) catch break :blk;
+                valid = if (pgp_rsa_verify(pk_n.len, sig, signed_data.items, pk, .sha2_256)) true else |err| if (err == error.unrecognized) null else false;
+            }
             if (std.mem.eql(u8, sigformat, "ssh-ed25519")) blk: {
                 const ed = std.crypto.sign.Ed25519;
                 const pk_len = pkfixed.readInt(u32, .big) catch break :blk;
@@ -2623,7 +2636,6 @@ pub const Signature = union(enum) {
             // ssh-dss (dsa)
             // sk-ecdsa-sha2-nistp256@openssh.com
             // sk-ssh-ed25519@openssh.com
-            // rsa-sha2-256
             // rsa-sha2-512
 
             return .{ .ssh = .{
