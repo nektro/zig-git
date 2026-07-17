@@ -2596,9 +2596,31 @@ pub const Signature = union(enum) {
                 const sig = ns.Signature.fromBytes((r[0..C.scalar.encoded_length] ++ s[0..C.scalar.encoded_length]).*);
                 valid = if (sig.verify(signed_data.items, pk)) true else |_| false;
             }
+            if (std.mem.eql(u8, sigformat, "ecdsa-sha2-nistp384")) blk: {
+                const C = std.crypto.ecc.P384;
+                const H = std.crypto.hash.sha2.Sha384;
+                const ns = std.crypto.sign.ecdsa.Ecdsa(C, H);
+                const ident_len = pkfixed.readInt(u32, .big) catch break :blk;
+                if (ident_len != "nistp384".len) break :blk;
+                if (!(pkfixed.readExpected("nistp384") catch break :blk)) break :blk;
+                const q_len = pkfixed.readInt(u32, .big) catch break :blk;
+                const q = pkfixed.readSlice(q_len) catch break :blk;
+                const pk = ns.PublicKey.fromSec1(q) catch break :blk;
+                const sigblob_len = sigfixed.readInt(u32, .big) catch break :blk;
+                _ = sigblob_len;
+                const r_len = sigfixed.readInt(u32, .big) catch break :blk;
+                var r = sigfixed.readSlice(r_len) catch break :blk;
+                if (r[0] == 0) r = r[1..];
+                if (r.len != C.scalar.encoded_length) break :blk;
+                const s_len = sigfixed.readInt(u32, .big) catch break :blk;
+                var s = sigfixed.readSlice(s_len) catch break :blk;
+                if (s[0] == 0) s = s[1..];
+                if (s.len != C.scalar.encoded_length) break :blk;
+                const sig = ns.Signature.fromBytes((r[0..C.scalar.encoded_length] ++ s[0..C.scalar.encoded_length]).*);
+                valid = if (sig.verify(signed_data.items, pk)) true else |_| false;
+            }
             // ssh-dss (dsa)
             // sk-ecdsa-sha2-nistp256@openssh.com
-            // ecdsa-sha2-nistp384
             // ecdsa-sha2-nistp521
             // sk-ssh-ed25519@openssh.com
             // rsa-sha2-256
