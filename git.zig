@@ -2557,12 +2557,12 @@ pub const Signature = union(enum) {
             const sigformat = try sigfixed.readSlice(try sigfixed.readInt(u32, .big));
             var pkfixed: nio.FixedBufferStream([]const u8) = .init(publickey);
             const pkformat = try pkfixed.readSlice(try pkfixed.readInt(u32, .big));
-            _ = pkformat;
 
             if (std.mem.eql(u8, sigformat, "ssh-rsa")) {
                 // intentionally skipped, rsa with sha1
             }
             if (std.mem.eql(u8, sigformat, "rsa-sha2-256")) blk: {
+                if (!(std.mem.eql(u8, pkformat, "ssh-rsa"))) break :blk;
                 const ns = std.crypto.Certificate.rsa;
                 const pk_e_len = pkfixed.readInt(u32, .big) catch break :blk;
                 var pk_e = pkfixed.readSlice(pk_e_len) catch break :blk;
@@ -2576,6 +2576,7 @@ pub const Signature = union(enum) {
                 valid = if (pgp_rsa_verify(pk_n.len, sig, signed_data.items, pk, .sha2_256)) true else |err| if (err == error.unrecognized) null else false;
             }
             if (std.mem.eql(u8, sigformat, "rsa-sha2-512")) blk: {
+                if (!(std.mem.eql(u8, pkformat, "ssh-rsa"))) break :blk;
                 const ns = std.crypto.Certificate.rsa;
                 const pk_e_len = pkfixed.readInt(u32, .big) catch break :blk;
                 var pk_e = pkfixed.readSlice(pk_e_len) catch break :blk;
@@ -2589,6 +2590,7 @@ pub const Signature = union(enum) {
                 valid = if (pgp_rsa_verify(pk_n.len, sig, signed_data.items, pk, .sha2_512)) true else |err| if (err == error.unrecognized) null else false;
             }
             if (std.mem.eql(u8, sigformat, "ssh-ed25519")) blk: {
+                if (!(std.mem.eql(u8, pkformat, "ssh-ed25519"))) break :blk;
                 const ed = std.crypto.sign.Ed25519;
                 const pk_len = pkfixed.readInt(u32, .big) catch break :blk;
                 if (pk_len != ed.PublicKey.encoded_length) break :blk;
@@ -2601,6 +2603,7 @@ pub const Signature = union(enum) {
                 valid = if (sig.verifyStrict(signed_data.items, pk)) true else |_| false;
             }
             if (std.mem.eql(u8, sigformat, "ecdsa-sha2-nistp256")) blk: {
+                if (!(std.mem.eql(u8, pkformat, "ecdsa-sha2-nistp256"))) break :blk;
                 const C = std.crypto.ecc.P256;
                 const H = std.crypto.hash.sha2.Sha256;
                 const ns = std.crypto.sign.ecdsa.Ecdsa(C, H);
@@ -2624,6 +2627,7 @@ pub const Signature = union(enum) {
                 valid = if (sig.verify(signed_data.items, pk)) true else |_| false;
             }
             if (std.mem.eql(u8, sigformat, "ecdsa-sha2-nistp384")) blk: {
+                if (!(std.mem.eql(u8, pkformat, "ecdsa-sha2-nistp384"))) break :blk;
                 const C = std.crypto.ecc.P384;
                 const H = std.crypto.hash.sha2.Sha384;
                 const ns = std.crypto.sign.ecdsa.Ecdsa(C, H);
