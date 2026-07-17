@@ -2392,7 +2392,8 @@ pub const Signature = union(enum) {
     // https://datatracker.ietf.org/doc/html/rfc9580#section-4
     // https://datatracker.ietf.org/doc/html/rfc9580#signature-packet
     // https://datatracker.ietf.org/doc/html/rfc5656
-    // https://datatracker.ietf.org/doc/html/rfc4253
+    // https://datatracker.ietf.org/doc/html/rfc4253#section-6.6
+    // https://datatracker.ietf.org/doc/html/rfc8709
     pub fn fromReader(kind: NonVoidUnionFieldEnum(Signature), allocator: std.mem.Allocator, b64r: anytype, message: []const u8) !Signature {
         if (kind == .pgp) {
             var signed_data: nio.AllocatingWriter = .init(allocator);
