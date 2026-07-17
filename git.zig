@@ -2621,7 +2621,6 @@ pub const Signature = union(enum) {
             }
             // ssh-dss (dsa)
             // sk-ecdsa-sha2-nistp256@openssh.com
-            // ecdsa-sha2-nistp521
             // sk-ssh-ed25519@openssh.com
             // rsa-sha2-256
             // rsa-sha2-512
