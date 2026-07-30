@@ -12,6 +12,9 @@ pub const Id = *const [40]u8;
 pub const TreeId = struct {
     id: Id,
 
+    pub const zero: TreeId = .{ .id = "0000000000000000000000000000000000000000" };
+    pub const empty: TreeId = .{ .id = "4b825dc642cb6eb9a060e54bf8d69288fbee4904" }; // echo -n | git hash-object -t tree --stdin
+
     pub fn eql(self: TreeId, other: TreeId) bool {
         return std.mem.eql(u8, self.id, other.id);
     }
@@ -19,6 +22,8 @@ pub const TreeId = struct {
 
 pub const CommitId = struct {
     id: Id,
+
+    pub const zero: CommitId = .{ .id = "0000000000000000000000000000000000000000" };
 
     pub fn eql(self: CommitId, other: CommitId) bool {
         return std.mem.eql(u8, self.id, other.id);
@@ -28,6 +33,9 @@ pub const CommitId = struct {
 pub const BlobId = struct {
     id: Id,
 
+    pub const zero: BlobId = .{ .id = "0000000000000000000000000000000000000000" };
+    pub const empty: BlobId = .{ .id = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391" }; // echo -n | git hash-object -t blob --stdin
+
     pub fn eql(self: BlobId, other: BlobId) bool {
         return std.mem.eql(u8, self.id, other.id);
     }
@@ -35,6 +43,8 @@ pub const BlobId = struct {
 
 pub const TagId = struct {
     id: Id,
+
+    pub const zero: BlobId = .{ .id = "0000000000000000000000000000000000000000" };
 
     pub fn eql(self: TagId, other: TagId) bool {
         return std.mem.eql(u8, self.id, other.id);
@@ -244,9 +254,7 @@ pub fn getTreeDiff(alloc: std.mem.Allocator, dir: nfs.Dir, commitid: CommitId, p
     defer t.end();
 
     if (parentid == null) {
-        // 4b825dc642cb6eb9a060e54bf8d69288fbee4904 is a hardcode for the empty tree in git sha1
-        // result of `printf | git hash-object -t tree --stdin`
-        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "-p", "--raw", "--full-index", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", commitid.id });
+        const result = try root.child_process.run(alloc, dir, .ignore, .pipe, .pipe, 1024 * 1024 * 1024, &.{ "git", "diff-tree", "-p", "--raw", "--full-index", TreeId.empty.id, commitid.id });
         std.debug.assert(result.term == .exited and result.term.exited == 0);
         return std.mem.trim(u8, result.stdout, "\n");
     }
