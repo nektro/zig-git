@@ -1314,11 +1314,12 @@ pub const Repository = struct {
         }
     }
 
-    pub fn getTreeCommits(r: *Repository, arena: std.mem.Allocator, base_oid: CommitId, dir_path: []const u8) ![]const CommitId {
+    pub fn getTreeCommits(r: *Repository, arena: std.mem.Allocator, base_oid: CommitId, dir_path: []const u8, timeout_ms: u64) ![]const CommitId {
         const t = tracer.trace(@src(), "", .{});
         defer t.end();
 
-        // const start = time.milliTimestamp();
+        const start = time.milliTimestamp();
+        var timeout_ended = false;
 
         const base = try r.getCommitA(base_oid.id, .no_cache);
         const base_tree_id, const base_tree_id_parent = try traverseTo(r, base.tree, dir_path);
@@ -1329,7 +1330,7 @@ pub const Repository = struct {
         var found: usize = 0;
         var result: std.StringArrayHashMapUnmanaged(CommitId) = .empty;
         defer result.deinit(r.gpa);
-        for (base_tree.children) |obj| try result.put(r.gpa, obj.name, undefined);
+        for (base_tree.children) |obj| try result.put(r.gpa, obj.name, .zero);
 
         var set: std.bit_set.DynamicBitSetUnmanaged = try .initEmpty(r.gpa, total);
         defer set.deinit(r.gpa);
@@ -1350,6 +1351,10 @@ pub const Repository = struct {
         }) {
             searched += 1;
             if (commit.parents.len == 0) break;
+            if (timeout_ms > 0 and time.milliTimestamp() - start > timeout_ms) {
+                timeout_ended = true;
+                break;
+            }
             const new_tree_id, const new_tree_id_parent = try traverseTo(r, commit.tree, dir_path);
             defer if (new_tree_id_parent) |p| p.destroy(r);
             if (new_tree_id == null) {
@@ -1393,11 +1398,11 @@ pub const Repository = struct {
                 break;
             }
         }
-        for (0..total, result.values()) |i, *v| {
+        if (!timeout_ended) for (0..total, result.values()) |i, *v| {
             if (!set.isSet(i)) {
                 v.* = commit_id;
             }
-        }
+        };
 
         // const end = time.milliTimestamp();
         // std.log.debug("found {d} in {d}ms", .{ total, end - start });
