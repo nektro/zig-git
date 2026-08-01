@@ -812,8 +812,9 @@ pub const Repository = struct {
                 else => |e| return e,
             };
             defer objfile.close();
-            const compressed_content = try objfile.mmap();
-            defer nfs.munmap(compressed_content);
+            const stat = try objfile.stat();
+            const compressed_content = try objfile.readAlloc(r.gpa, stat.size);
+            defer r.gpa.free(compressed_content);
             var list: nio.AllocatingWriter = .init(r.gpa);
             errdefer list.deinit();
             try list.ensureUnusedCapacity(512);
