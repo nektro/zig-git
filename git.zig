@@ -1909,9 +1909,18 @@ pub const Tree = struct {
         }
 
         pub fn order(lhs: Object, rhs: Object) std.math.Order {
-            if (lhs.name.ptr != rhs.name.ptr) {
-                const n = @min(lhs.name.len, rhs.name.len);
-                for (lhs.name[0..n], rhs.name[0..n]) |lhs_elem, rhs_elem| {
+            return order_bare(
+                lhs.name,
+                rhs.name,
+                lhs.mode.type == .directory,
+                rhs.mode.type == .directory,
+            );
+        }
+
+        pub fn order_bare(l: []const u8, r: []const u8, l_is_dir: bool, r_is_dir: bool) std.math.Order {
+            if (l.ptr != r.ptr) {
+                const n = @min(l.len, r.len);
+                for (l[0..n], r[0..n]) |lhs_elem, rhs_elem| {
                     switch (std.math.order(lhs_elem, rhs_elem)) {
                         .eq => continue,
                         .lt => return .lt,
@@ -1919,11 +1928,9 @@ pub const Tree = struct {
                     }
                 }
             }
-            const l_is_dir = lhs.mode.type == .directory;
-            const r_is_dir = rhs.mode.type == .directory;
-            return switch (std.math.order(lhs.name.len, rhs.name.len)) {
-                .lt => if (l_is_dir) std.math.order('/', rhs.name[lhs.name.len]) else .lt,
-                .gt => if (r_is_dir) std.math.order(lhs.name[rhs.name.len], '/') else .gt,
+            return switch (std.math.order(l.len, r.len)) {
+                .lt => if (l_is_dir) std.math.order('/', r[l.len]) else .lt,
+                .gt => if (r_is_dir) std.math.order(l[r.len], '/') else .gt,
                 .eq => if (l_is_dir and r_is_dir) .eq else if (l_is_dir) .gt else if (r_is_dir) .lt else .eq,
             };
         }
