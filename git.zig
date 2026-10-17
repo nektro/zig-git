@@ -240,7 +240,7 @@ fn parseTreeMode(input: string) !Tree.Object.Mode {
 
     std.debug.assert(input.len == 6);
     return .{
-        .type = @enumFromInt(try extras.parseDigits(u16, input[0..3], 10)),
+        .type = @fromBackingInt(@intCast(try extras.parseDigits(u16, input[0..3], 10))),
         .perm_user = @bitCast(try extras.parseDigits(u3, input[3..][0..1], 8)),
         .perm_group = @bitCast(try extras.parseDigits(u3, input[4..][0..1], 8)),
         .perm_other = @bitCast(try extras.parseDigits(u3, input[5..][0..1], 8)),
@@ -937,7 +937,7 @@ pub const Repository = struct {
                 var packedobj_fbs = nio.FixedBufferStream([]const u8).init(packedobj_content);
                 const PackedObjType = enum(u3) { none, commit, tree, blob, tag, reserved, ofs_delta, ref_delta };
                 var c: usize = packedobj_fbs.takeArray(1)[0];
-                const ty: PackedObjType = @enumFromInt((c >> 4) & 7);
+                const ty: PackedObjType = @fromBackingInt(@intCast((c >> 4) & 7));
                 var size: usize = c & 15;
                 var shift: u6 = 4;
                 while (c & 0x80 > 0) {
@@ -1742,9 +1742,7 @@ pub const Repository = struct {
     }
 };
 
-const z = @cImport({
-    @cInclude("zlib.h");
-});
+const z = @import("c");
 
 fn inflate_decompress(in: []const u8, out: *nio.AllocatingWriter) !void {
     // {
@@ -1760,13 +1758,13 @@ fn inflate_decompress(in: []const u8, out: *nio.AllocatingWriter) !void {
     // }
     var strm: z.z_stream = std.mem.zeroes(z.z_stream);
     {
-        const ret: ZlibCode = @enumFromInt(z.inflateInit(&strm));
+        const ret: ZlibCode = @fromBackingInt(@intCast(z.inflateInit(&strm)));
         if (ret == .Z_MEM_ERROR) return error.OutOfMemory;
         std.debug.assert(ret != .Z_VERSION_ERROR);
         std.debug.assert(ret != .Z_STREAM_ERROR);
     }
     defer {
-        const ret: ZlibCode = @enumFromInt(z.inflateEnd(&strm));
+        const ret: ZlibCode = @fromBackingInt(@intCast(z.inflateEnd(&strm)));
         std.debug.assert(ret != .Z_STREAM_ERROR);
         std.debug.assert(ret == .Z_OK);
     }
@@ -1779,7 +1777,7 @@ fn inflate_decompress(in: []const u8, out: *nio.AllocatingWriter) !void {
         strm.next_out = &buf;
         strm.avail_out = buf.len;
         // std.log.debug("inflate_decompress: -> {*} {*} {d} {d}", .{ strm.next_in, strm.next_out, strm.avail_in, strm.avail_out });
-        const ret: ZlibCode = @enumFromInt(z.inflate(&strm, z.Z_SYNC_FLUSH));
+        const ret: ZlibCode = @fromBackingInt(@intCast(z.inflate(&strm, z.Z_SYNC_FLUSH)));
         // std.log.debug("inflate_decompress: <- {*} {*} {d} {d} {s}", .{ strm.next_in, strm.next_out, strm.avail_in, strm.avail_out, @tagName(ret) });
         std.debug.assert(ret != .Z_STREAM_ERROR);
         std.debug.assert(ret != .Z_BUF_ERROR);
@@ -2221,7 +2219,7 @@ pub const Signature = union(enum) {
 
             pub fn stringifyJson(e: Type, writer: anytype, options: std.json.Stringify.Options, json: type) !void {
                 return switch (e) {
-                    _ => json.stringify(writer, @intFromEnum(e), options),
+                    _ => json.stringify(writer, @backingInt(e), options),
                     else => json.stringify(writer, @tagName(e), options),
                 };
             }
@@ -2245,7 +2243,7 @@ pub const Signature = union(enum) {
 
             pub fn stringifyJson(e: PublicKeyAlgorithm, writer: anytype, options: std.json.Stringify.Options, json: type) !void {
                 return switch (e) {
-                    _ => json.stringify(writer, @intFromEnum(e), options),
+                    _ => json.stringify(writer, @backingInt(e), options),
                     else => json.stringify(writer, @tagName(e), options),
                 };
             }
@@ -2267,7 +2265,7 @@ pub const Signature = union(enum) {
 
             pub fn stringifyJson(e: HashAlgorithm, writer: anytype, options: std.json.Stringify.Options, json: type) !void {
                 return switch (e) {
-                    _ => json.stringify(writer, @intFromEnum(e), options),
+                    _ => json.stringify(writer, @backingInt(e), options),
                     else => json.stringify(writer, @tagName(e), options),
                 };
             }
@@ -2440,18 +2438,18 @@ pub const Signature = union(enum) {
             if (sig_version == 3) blk: {
                 const hashed_len = try b64r.readByte();
                 if (hashed_len != 5) break :blk;
-                type_id = @enumFromInt(try b64r.readByte());
+                type_id = @fromBackingInt(@intCast(try b64r.readByte()));
                 creation_time = try b64r.readArray(4);
                 keyid = try b64r.readArray(8);
-                pk_algo = @enumFromInt(try b64r.readByte());
-                hash_algo = @enumFromInt(try b64r.readByte());
+                pk_algo = @fromBackingInt(@intCast(try b64r.readByte()));
+                hash_algo = @fromBackingInt(@intCast(try b64r.readByte()));
                 signed_hash_value_prefix = try b64r.readArray(2);
             }
             if (sig_version == 4) {
-                type_id = @enumFromInt(try b64r.readByte());
-                pk_algo = @enumFromInt(try b64r.readByte());
-                hash_algo = @enumFromInt(try b64r.readByte());
-                try signed_data.writeAll(&.{ @intFromEnum(type_id), @intFromEnum(pk_algo), @intFromEnum(hash_algo) });
+                type_id = @fromBackingInt(@intCast(try b64r.readByte()));
+                pk_algo = @fromBackingInt(@intCast(try b64r.readByte()));
+                hash_algo = @fromBackingInt(@intCast(try b64r.readByte()));
+                try signed_data.writeAll(&.{ @backingInt(type_id), @backingInt(pk_algo), @backingInt(hash_algo) });
                 const subpacket_len_hashed = try b64r.readInt(u16, .big);
                 try signed_data.writeInt(u16, subpacket_len_hashed, .big);
                 const subpacket_bytes = try b64r.readAlloc(allocator, subpacket_len_hashed);
@@ -2463,7 +2461,7 @@ pub const Signature = union(enum) {
                     var lr = nio.FixedBufferStream([]u8).init(subpacket_bytes);
                     while (lr.rest().len > 0) {
                         const subpacket_len = try pgp_read_subpacket_len(&lr);
-                        const subpacket_typeid: Pgp.SubType = @enumFromInt(try lr.readByte() & 127);
+                        const subpacket_typeid: Pgp.SubType = @fromBackingInt(@intCast(try lr.readByte() & 127));
                         if (subpacket_typeid == .signature_creation_time and subpacket_len == 1 + 4) {
                             creation_time = try lr.readArray(4);
                             continue;
@@ -2482,9 +2480,9 @@ pub const Signature = union(enum) {
                 signed_hash_value_prefix = try b64r.readArray(2);
             }
             if (sig_version == 6) {
-                type_id = @enumFromInt(try b64r.readByte());
-                pk_algo = @enumFromInt(try b64r.readByte());
-                hash_algo = @enumFromInt(try b64r.readByte());
+                type_id = @fromBackingInt(@intCast(try b64r.readByte()));
+                pk_algo = @fromBackingInt(@intCast(try b64r.readByte()));
+                hash_algo = @fromBackingInt(@intCast(try b64r.readByte()));
                 const subpacket_len_hashed = try b64r.readInt(u32, .big);
                 {
                     try b64r.skipBytes(subpacket_len_hashed, .{}); // TODO read this
@@ -2728,7 +2726,7 @@ pub const Signature = union(enum) {
         }
         if (key_version == 4) {
             const creation_time = try lr.readArray(4);
-            const pk_algo: Pgp.PublicKeyAlgorithm = @enumFromInt(try lr.readByte());
+            const pk_algo: Pgp.PublicKeyAlgorithm = @fromBackingInt(@intCast(try lr.readByte()));
             const material = try pgp_parse_pubkey_material(r, allocator, pk_algo);
             return .{
                 .version = key_version,

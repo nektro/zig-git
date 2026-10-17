@@ -3,6 +3,7 @@ name: git
 main: git.zig
 license: MPL-2.0
 description: Inspect into the depths of your .git folder purely from Zig
+translate_c_h: zlib.h
 dependencies:
   - src: git https://github.com/nektro/zig-time
   - src: git https://github.com/nektro/zig-extras
